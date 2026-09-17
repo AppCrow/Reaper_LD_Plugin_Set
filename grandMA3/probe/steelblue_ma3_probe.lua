@@ -1,19 +1,44 @@
--- steelblue_ma3_probe.lua -- grandMA3 probe 1 for the planned REAPER -> MA3 marker importer.
+-- steelblue_ma3_probe.lua -- grandMA3 probe for the planned REAPER -> MA3 marker importer.
 --
 -- WHAT THIS IS
---   A read-mostly reconnaissance plugin. It answers the questions the importer
---   cannot be written without, and it answers them on the real console instead
---   of from documentation: which Lua libraries exist, where files may be read
---   and written, what the timecode object tree actually looks like, whether a
---   track and an event can be created from Lua at all, which command-line
---   spelling stores a timecode event, what unit an event time carries, and what
---   a MessageBox with selectors/states/inputs hands back.
+--   A reconnaissance plugin. It answers the questions the importer cannot be
+--   written without, and it answers them on the real console instead of from
+--   documentation.
+--
+-- WHAT RUN 2 ALREADY ANSWERED (2026-09-17, MA3 2.3.2.0 onPC, Mac)
+--   Lua is 5.4. io / os / loadfile / dofile are all present and NOT sandboxed.
+--   GetPath(Enums.PathType.Library) is ~/MALightingTechnology/gma3_library.
+--   MessageBox returns { success, result, selectors[name], states[name],
+--   inputs[name] }, where result is the VALUE of the button that was tapped.
+--   Cmd answers "OK" / "Illegal object" / "Illegal property". The command chain
+--   Store TC 1.1 -> Store TC 1.1.1 -> Assign Sequence 1 at TC 1.1.1 ->
+--   Store TC 1.1.1.1 -> Store Type "CmdSubTrack" Timecode 1.1.1.1.1 ->
+--   Store TC 1.1.1.1.1.1 -> Set ... Property "time"/"token"/"cuedestination"
+--   is accepted end to end.
+--
+-- WHY THERE IS A VERSION 1.1 -- THE THREE THINGS RUN 2 GOT WRONG OR MISSED
+--   1. IT READ THE WRONG DATA POOL. Every object lookup went through
+--      Root().ShowData.DataPools.Default, which is pool 1. Tobi's show works in
+--      pool 2 (DataPool() -> "DataPool 2"). So the timecode was never found,
+--      sections 4 and 7 never ran, and the cue list stayed empty while the
+--      command line was happily storing cues in the pool nobody was looking at.
+--      Version 1.1 goes through DataPool() everywhere and only LOGS what the
+--      Default route would have given, as a comparison.
+--   2. THE CONSOLE PICKS THE EVENT NUMBER, NOT US. "Store TC 1.1.1.1.1.5" was
+--      answered with OK, but "Set TC 1.1.1.1.1.5 ..." came back "Illegal
+--      object" -- the event had been created under a different number. Version
+--      1.1 therefore lists the children of the CmdSubTrack before and after
+--      every Store and works out which child is new, instead of assuming.
+--   3. NOBODY KNOWS WHERE A REAPER GUID COULD LIVE. Section 8 now dumps every
+--      level of the timecode tree and tries to write a marker string into every
+--      text-shaped property it finds, so the importer knows whether it can
+--      recognise its own events again on the next import.
 --
 -- WHAT IT TOUCHES
---   One timecode and one sequence of a THROWAWAY show (numbers below), plus
---   cues 990-992 of that sequence. Section 9 removes everything it created.
---   It writes two files into the library folder: the report and, on the first
---   run, an example data file.
+--   One timecode and one sequence of a THROWAWAY show, plus cues 990-992 of
+--   that sequence, all in the CURRENT data pool. Section 9 removes everything
+--   it created. It writes two files into the library folder: the report and, on
+--   the first run, an example data file.
 --
 -- HOW IT REPORTS
 --   Every step is wrapped in pcall, so a call that does not exist on this
@@ -23,16 +48,17 @@
 --   leaves everything gathered so far on disk.
 --
 -- LUA DIALECT
---   The 2.3 manual says Lua 5.4.6 (help.malighting.com/grandMA3/2.3/HTML/lua.html),
---   older notes in this project say 5.3. This file therefore stays inside the
---   intersection: no <const>, no <close>, no 5.4-only library call. Section 1
---   prints _VERSION, which settles the question for good.
+--   Section 1 of run 2 printed "Lua 5.4", so 5.4 is confirmed. This file still
+--   stays inside the 5.3/5.4 intersection -- no <const>, no <close>, no
+--   5.4-only library call -- because steelblue modules are shared with REAPER.
 
-local PROBE_VERSION = "1.0"
+local PROBE_VERSION = "1.1"
 
 -- ---------------------------------------------------------------- settings
--- Tobi edits these four numbers if his throwaway show uses different ones.
--- The plugin asks nothing; it only shows them once in a confirmation box.
+-- Tobi edits these numbers if his throwaway show uses different ones. The
+-- plugin asks nothing; it only shows them once in a confirmation box. If the
+-- timecode or the sequence does not exist in the CURRENT pool, the probe falls
+-- back to the first one that does and says so in the report.
 
 local TIMECODE_NO = 1   -- the EXISTING timecode the probe writes into
 local SEQUENCE_NO = 1   -- the EXISTING sequence the probe points a track at
@@ -44,6 +70,10 @@ local CUE_COUNT   = 3
 -- sandbox with files it writes itself. Example on Windows:
 --   local EXTERNAL_FILE = "C:\\Users\\Tobi\\Desktop\\test.txt"
 local EXTERNAL_FILE = ""
+
+-- The string the probe tries to park on every text-shaped property it finds.
+-- In the real importer this is where the REAPER marker GUID would go.
+local GUID_MARK = "steelblue:11112222-3333-4444"
 
 -- ------------------------------------------------------------------ output
 
@@ -149,6 +179,13 @@ local function try(label, fn, ...)
   return false, packed[2]
 end
 
+-- Run 2 answered "OK", the manual writes "Ok". Version 1.0 compared against
+-- "Ok" and therefore graded every successful command as a failure -- which is
+-- why cleanup fired a pointless second Delete. Compare without case.
+local function cmd_ok(answer)
+  return type(answer) == "string" and answer:lower() == "ok"
+end
+
 -- Calls a method by name on a handle. Written as a separate helper because
 -- "does this handle have that method at all" is one of the probe's questions.
 local function call_method(handle, method_name, ...)
@@ -188,13 +225,42 @@ local function index_quiet(handle, key)
   return nil
 end
 
+local function class_of(handle)
+  if handle == nil then
+    return nil
+  end
+  return get_quiet(handle, "GetClass")
+end
+
+local function name_of(handle)
+  if handle == nil then
+    return nil
+  end
+  local name = index_quiet(handle, "name")
+  if name ~= nil and type(name) ~= "function" then
+    return name
+  end
+  return get_quiet(handle, "Get", "Name")
+end
+
+local function number_of(handle)
+  if handle == nil then
+    return nil
+  end
+  local no = index_quiet(handle, "no")
+  if no ~= nil and type(no) ~= "function" then
+    return no
+  end
+  return get_quiet(handle, "Get", "No")
+end
+
 local function handle_label(handle)
   if handle == nil then
     return "nil"
   end
-  local name = index_quiet(handle, "name")
-  local class = get_quiet(handle, "GetClass")
   local parts = {}
+  local class = class_of(handle)
+  local name = name_of(handle)
   if class ~= nil then parts[#parts + 1] = "class=" .. S(class) end
   if name ~= nil then parts[#parts + 1] = "name=" .. S(name) end
   if #parts == 0 then
@@ -303,33 +369,12 @@ local function list_methods(handle, indent)
   end
 end
 
--- pairs() over a handle may or may not work; if it does, it is the most
--- complete answer this probe can get.
-local function list_pairs(handle, indent, limit)
-  indent = indent or "    "
-  limit = limit or 60
-  local ok, err = pcall(function()
-    local shown = 0
-    for key, value in pairs(handle) do
-      shown = shown + 1
-      if shown > limit then
-        wf("%s... (stopped after %d entries)", indent, limit)
-        return
-      end
-      wf("%s%-24s = %s  (%s)", indent, S(key), S(value), type(value))
-    end
-    if shown == 0 then
-      wf("%s(pairs() worked but the handle has no entries)", indent)
-    end
-  end)
-  if not ok then
-    wf("%spairs() not possible: %s", indent, S(err))
-  end
-end
-
 -- Children(handle) is the documented way and returns a plain table; Count()
 -- plus Ptr() is the fallback. Which one answers is itself worth recording.
 local function children_of(handle)
+  if handle == nil then
+    return {}, "no handle", 0
+  end
   local list = get_quiet(handle, "Children")
   if type(list) == "table" and #list > 0 then
     return list, "Children()", #list
@@ -352,6 +397,10 @@ local function children_of(handle)
   return {}, "neither Children() nor Count() answered", 0
 end
 
+-- One line per child, with the CLASS in it. The class is the point: a
+-- TrackGroup holds a MarkerTrack next to the real Tracks, so "the first child"
+-- and "the first track" are not the same thing, and the importer has to know
+-- which of the two a command-line address counts.
 local function list_children(handle, indent, limit)
   indent = indent or "    "
   limit = limit or 40
@@ -363,12 +412,98 @@ local function list_children(handle, indent, limit)
       break
     end
     local child = kids[i]
-    wf("%s[%d] %s  no=%s index=%s",
-      indent, i, handle_label(child),
-      S(index_quiet(child, "no") or get_quiet(child, "Get", "No")),
-      S(index_quiet(child, "index")))
+    wf("%s[%d] %s  no=%s index=%s", indent, i, handle_label(child),
+      S(number_of(child)), S(index_quiet(child, "index")))
   end
   return kids
+end
+
+local function dump_text(handle)
+  if handle == nil then
+    return nil, "no handle"
+  end
+  local ok, text = pcall(function() return handle:Dump() end)
+  if not ok then
+    return nil, S(text)
+  end
+  if type(text) ~= "string" or text == "" then
+    return nil, "Dump() returned " .. S(text) .. " -- its text went to the System Monitor"
+  end
+  return text
+end
+
+local function write_dump(handle, indent)
+  indent = indent or "    "
+  local text, why = dump_text(handle)
+  if not text then
+    wf("%sDump(): %s", indent, S(why))
+    return nil
+  end
+  wf("%sDump():", indent)
+  for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+    if line ~= "" then
+      wf("%s  %s", indent, line)
+    end
+  end
+  return text
+end
+
+-- A Dump() lists its properties as
+--     NOTE = ""
+--     INDEX = "14" (Read Only)
+-- Anything that is not read only and whose name reads like free text is a
+-- candidate for parking the REAPER GUID on. Returned in the order the dump
+-- lists them, without duplicates.
+local TEXTY = { "NOTE", "COMMENT", "TEXT", "INFO", "DESCRIPTION", "TAG", "TAGS",
+                "NAME", "LABEL", "USERTEXT", "SCRIBBLE", "KEYWORD" }
+
+local function text_property_candidates(dump)
+  local out, seen = {}, {}
+  if type(dump) ~= "string" then
+    return out
+  end
+  for line in (dump .. "\n"):gmatch("([^\n]*)\n") do
+    local key, rest = line:match("^%s*([A-Z][A-Z0-9_]*)%s*=%s*(.*)$")
+    if key and not rest:find("(Read Only)", 1, true) then
+      local texty = false
+      for i = 1, #TEXTY do
+        if key:find(TEXTY[i], 1, true) then
+          texty = true
+          break
+        end
+      end
+      if texty and not seen[key] then
+        seen[key] = true
+        out[#out + 1] = key
+      end
+    end
+  end
+  return out
+end
+
+-- pairs() over a handle may or may not work; run 2 says it does not
+-- ("bad argument #1 to 'for iterator' (table expected, got ObjMeta)"), so it is
+-- off by default now and only switched on where it might still surprise.
+local function list_pairs(handle, indent, limit)
+  indent = indent or "    "
+  limit = limit or 60
+  local ok, err = pcall(function()
+    local shown = 0
+    for key, value in pairs(handle) do
+      shown = shown + 1
+      if shown > limit then
+        wf("%s... (stopped after %d entries)", indent, limit)
+        return
+      end
+      wf("%s%-24s = %s  (%s)", indent, S(key), S(value), type(value))
+    end
+    if shown == 0 then
+      wf("%s(pairs() worked but the handle has no entries)", indent)
+    end
+  end)
+  if not ok then
+    wf("%spairs() not possible: %s", indent, S(err))
+  end
 end
 
 -- The full picture of one object: class, methods, properties, children, and
@@ -378,7 +513,7 @@ local function describe(handle, title, options)
   sub(title .. "  ->  " .. handle_label(handle))
   if handle == nil then
     w("    handle is nil, nothing to describe")
-    return
+    return nil
   end
   kv("type(handle)", type(handle))
   kv("tostring(handle)", handle)
@@ -386,11 +521,13 @@ local function describe(handle, title, options)
   call_method(handle, "GetChildClass")
   call_method(handle, "Addr")
   call_method(handle, "ToAddr")
-  w("    methods present on the handle:")
-  list_methods(handle, "      ")
+  if options.methods ~= false then
+    w("    methods present on the handle:")
+    list_methods(handle, "      ")
+  end
   w("    properties that answered:")
   list_properties(handle, "      ")
-  if options.pairs ~= false then
+  if options.pairs then
     w("    pairs() over the handle:")
     list_pairs(handle, "      ")
   end
@@ -398,152 +535,112 @@ local function describe(handle, title, options)
     list_children(handle, "    ", options.child_limit or 40)
   end
   if options.dump ~= false then
-    -- Dump() is documented as returning the information as a string, so it can
-    -- land in this file instead of scrolling past in the System Monitor.
-    local ok, text = pcall(function() return handle:Dump() end)
-    if not ok then
-      wf("    Dump() failed: %s", S(text))
-    elseif type(text) == "string" and text ~= "" then
-      w("    Dump():")
-      for line in (text .. "\n"):gmatch("([^\n]*)\n") do
-        if line ~= "" then
-          wf("      %s", line)
-        end
-      end
-    else
-      wf("    Dump() returned %s -- its text went to the System Monitor instead", S(text))
-    end
+    return write_dump(handle, "    ")
   end
+  return nil
 end
 
 -- --------------------------------------------------------------- sections
 
+-- Run 2 printed all 263 globals and all 118 path types. Both are answered and
+-- archived; repeating them would bury the new findings. Section 1 now only
+-- confirms the handful the importer depends on.
+local IMPORTER_GLOBALS = {
+  "Root", "Cmd", "CmdIndirect", "CmdIndirectWait", "CmdObj", "Printf", "Echo",
+  "ErrPrintf", "GetPath", "GetPathSeparator", "FileExists", "MessageBox",
+  "TextInput", "Confirm", "PopupInput", "ObjectList", "SelectedTimecode",
+  "SelectedSequence", "DataPool", "ShowData", "CurrentUser", "Version",
+  "HostOS", "HostType", "Enums", "HandleToStr", "StrToHandle", "ToAddr",
+  "FromAddr", "GetObject", "IsObjectValid", "DirList", "CreateDirectoryRecursive",
+  "Export", "Import", "HookObjectChange", "SetVar", "GetVar",
+}
+
+local PATHS_THAT_MATTER = {
+  "Library", "CustomPluginLibrary", "PluginLibrary", "UserTimecodes",
+  "UserSequences", "Showfiles", "Temp", "MADir",
+}
+
 local function section_1_environment()
   section(1, "Environment: version, Lua, libraries, paths")
+  w("  (run 2 already listed all 263 globals and all 118 path types -- that is")
+  w("   archived. This section only re-confirms what the importer will use.)")
 
   sub("Lua itself")
   kv("_VERSION", _VERSION)
   kv("PROBE_VERSION", PROBE_VERSION)
 
-  local libraries = {
-    "string", "table", "math", "io", "os", "coroutine", "debug", "utf8", "package",
-  }
+  local libraries = { "string", "table", "math", "io", "os", "coroutine", "debug", "utf8", "package" }
   for i = 1, #libraries do
     local name = libraries[i]
-    kv("library " .. name, type(index_quiet(_G or {}, name) or rawget(_ENV or {}, name)))
+    local value = nil
+    pcall(function() value = _ENV[libraries[i]] end)
+    kv("library " .. name, type(value))
   end
 
-  local loaders = { "load", "loadstring", "loadfile", "dofile", "require", "rawget", "pcall", "select" }
+  local loaders = { "load", "loadfile", "dofile", "require", "pcall", "select" }
   for i = 1, #loaders do
-    local name = loaders[i]
     local fn = nil
-    pcall(function() fn = _ENV[name] end)
-    kv("function " .. name, type(fn))
+    pcall(function() fn = _ENV[loaders[i]] end)
+    kv("function " .. loaders[i], type(fn))
   end
 
   if type(os) == "table" then
-    try("os.time()", os.time)
     try("os.date()", os.date)
-    try("os.clock()", os.clock)
     try("os.getenv('HOME')", os.getenv, "HOME")
-    try("os.getenv('USERPROFILE')", os.getenv, "USERPROFILE")
     kv("os.remove", type(os.remove))
     kv("os.rename", type(os.rename))
-    kv("os.execute", type(os.execute))
   end
 
-  sub("Every global this plugin can see")
-  local ok = pcall(function()
-    local names = {}
-    for key, value in pairs(_ENV) do
-      names[#names + 1] = S(key) .. " (" .. type(value) .. ")"
+  sub("The globals the importer needs")
+  local missing = {}
+  for i = 1, #IMPORTER_GLOBALS do
+    local value = nil
+    pcall(function() value = _ENV[IMPORTER_GLOBALS[i]] end)
+    if value == nil then
+      missing[#missing + 1] = IMPORTER_GLOBALS[i]
     end
-    table.sort(names)
-    for i = 1, #names do
-      wf("    %s", names[i])
-    end
-    wf("    -- %d globals in total", #names)
-  end)
-  if not ok then
-    w("    pairs(_ENV) is not possible here; falling back to a name list")
-    local candidates = {
-      "Root", "Cmd", "CmdIndirect", "CmdIndirectWait", "Printf", "Echo", "ErrPrintf",
-      "GetPath", "FileExists", "MessageBox", "TextInput", "Confirm", "PopupInput",
-      "ObjectList", "SelectedTimecode", "SelectedSequence", "CurrentUser",
-      "CurrentProfile", "CurrentExecPage", "DataPool", "ShowData", "HookObjectChange",
-      "Version", "HostOS", "HostType", "HostSubType", "ProductType", "Enums",
-      "SetVar", "GetVar", "DelVar", "GlobalVars", "UserVars", "ShowVars",
-      "CreateDirectory", "DirList", "Timer", "Time", "Export", "Import",
-      "ColorCodeToColor", "HandleToInt", "IntToHandle", "ObjectListWithFilter",
-    }
-    for i = 1, #candidates do
-      local value = nil
-      pcall(function() value = _ENV[candidates[i]] end)
-      kv(candidates[i], type(value))
-    end
+    kv(IMPORTER_GLOBALS[i], type(value))
   end
+  kv("missing from that list", #missing == 0 and "none" or table.concat(missing, ", "))
 
   sub("grandMA3 version")
   try("Version()", Version)
   try("HostOS()", HostOS)
   try("HostType()", HostType)
-  try("HostSubType()", HostSubType)
-  try("ProductType()", ProductType)
   local ok_root, root = try("Root()", Root)
-  if ok_root and root ~= nil then
-    kv("Root() class", get_quiet(root, "GetClass"))
-    kv("Root().version", index_quiet(root, "version"))
-    kv("Root():Get('Version')", get_quiet(root, "Get", "Version"))
-  end
 
-  sub("GetPath -- which argument gives which folder")
+  sub("The folders the importer will read and write")
   if type(GetPath) ~= "function" then
     w("    GetPath is not available, so the probe cannot locate any folder")
-    return root
+    return ok_root and root or nil
   end
-
-  -- The enum route first: if Enums.PathType exists, walk every entry of it.
-  local walked = false
-  pcall(function()
-    if type(Enums) ~= "table" then return end
-    local path_type = Enums.PathType
-    if path_type == nil then return end
-    local entries = {}
-    for key, value in pairs(path_type) do
-      entries[#entries + 1] = { key = S(key), value = value }
+  for i = 1, #PATHS_THAT_MATTER do
+    local key = PATHS_THAT_MATTER[i]
+    local value = nil
+    pcall(function()
+      if type(Enums) == "table" and type(Enums.PathType) == "table" then
+        value = Enums.PathType[key]
+      end
+    end)
+    if value == nil then
+      wf("  SKIP GetPath(Enums.PathType.%s) -> no such enum entry", key)
+    else
+      try(string.format("GetPath(Enums.PathType.%s = %s)", key, S(value)), GetPath, value)
     end
-    table.sort(entries, function(a, b) return a.key < b.key end)
-    for i = 1, #entries do
-      walked = true
-      try(string.format("GetPath(Enums.PathType.%s = %s)", entries[i].key, S(entries[i].value)),
-        GetPath, entries[i].value)
-    end
-  end)
-  if not walked then
-    w("    Enums.PathType could not be walked; trying spellings instead")
   end
-
-  -- "shows" is the only string the 2.3 manual documents. The rest are guesses
-  -- that cost one log line each and might save the importer a round trip.
-  local spellings = {
-    "shows", "gma3_library", "library", "showfile", "showfiles",
-    "plugins", "userprofile", "user", "temp",
-  }
-  for i = 1, #spellings do
-    try("GetPath(\"" .. spellings[i] .. "\")", GetPath, spellings[i])
-  end
+  try("GetPath(\"gma3_library\")", GetPath, "gma3_library")
   try("GetPathSeparator()", GetPathSeparator)
 
-  return root
+  return ok_root and root or nil
 end
 
 -- Works out where the report goes. Called early so later sections can flush.
 --
 -- There is no "gma3_library" string constant in the 2.3 API; the folder is
--- reached through Enums.PathType. The order below is "most likely to be the
--- gma3_library folder" first, and whichever answers a non-empty string wins.
+-- reached through Enums.PathType. Run 2 confirmed Enums.PathType.Library is the
+-- one, so it stays first; the rest are the fallbacks.
 local LIBRARY_ENUMS = { "Library", "GrandMA3Library", "PluginLibrary", "Showfiles", "UserMedia" }
-local LIBRARY_STRINGS = { "library", "gma3_library", "shows" }
+local LIBRARY_STRINGS = { "gma3_library", "library", "shows" }
 
 local function pick_output_path()
   local library, source = nil, nil
@@ -596,8 +693,8 @@ return {
       name = "Kick",
       sequence = 12,
       events = {
-        { time = 1.5,  cue = 1, name = "Intro",  command = "Go+" },
-        { time = 12.25, cue = 2, name = "Drop",   command = "Go+" },
+        { time = 1.5,  cue = 1, name = "Intro",  command = "Go+", guid = "{AAAA-1}" },
+        { time = 12.25, cue = 2, name = "Drop",   command = "Go+", guid = "{AAAA-2}" },
       },
     },
   },
@@ -613,8 +710,6 @@ local function section_2_files(library_dir)
 
   sub("A data file next to the plugin, loaded with loadfile")
 
-  -- Where the plugin itself lives. Several candidates, because which folder
-  -- MA3 hands out for plugins is one of the open questions.
   local plugin_dirs = {}
   local function add_dir(dir)
     if type(dir) == "string" and dir ~= "" then
@@ -629,17 +724,13 @@ local function section_2_files(library_dir)
   if type(GetPath) == "function" then
     pcall(function()
       if type(Enums) == "table" and type(Enums.PathType) == "table" then
-        for _, key in ipairs({ "Library", "GrandMA3Library", "PluginLibrary", "Showfiles" }) do
+        for _, key in ipairs({ "Library", "CustomPluginLibrary", "PluginLibrary" }) do
           if Enums.PathType[key] ~= nil then
             add_dir(GetPath(Enums.PathType[key]))
           end
         end
       end
     end)
-  end
-  if library_dir then
-    add_dir(library_dir .. path_sep .. "plugins")
-    add_dir(library_dir .. path_sep .. "datapools" .. path_sep .. "plugins")
   end
 
   local data_path = nil
@@ -657,7 +748,6 @@ local function section_2_files(library_dir)
   end
 
   if data_path == nil and library_dir then
-    -- First run: write the example next to the report so the next run finds it.
     data_path = library_dir .. path_sep .. "steelblue_probe_data.lua"
     w("    none of the candidates existed -- writing the example file now")
     local ok_write = try("io.open(data_path, 'w')", function()
@@ -695,16 +785,16 @@ local function section_2_files(library_dir)
             kv("track[1].events[1].cue", track.events[1].cue)
             kv("track[1].events[1].name", track.events[1].name)
             kv("track[1].events[1].command", track.events[1].command)
+            kv("track[1].events[1].guid", track.events[1].guid)
           end
         end
       end
     else
       kv("loadfile error", load_err)
     end
-    try("dofile(data_path)", dofile, data_path)
   end
 
-  sub("io.open outside the library folder -- is Lua sandboxed?")
+  sub("io.open outside the library folder -- run 2 said yes, confirming once more")
   if type(io) ~= "table" then
     w("    no io library, nothing to test")
   else
@@ -717,17 +807,8 @@ local function section_2_files(library_dir)
         file:close()
         return "written"
       end)
-      if wrote then
-        try("read it back", function()
-          local file = io.open(escape, "r")
-          if not file then error("could not reopen", 0) end
-          local text = file:read("*a")
-          file:close()
-          return text
-        end)
-        if type(os) == "table" and type(os.remove) == "function" then
-          try("os.remove(escape file)", os.remove, escape)
-        end
+      if wrote and type(os) == "table" and type(os.remove) == "function" then
+        try("os.remove(escape file)", os.remove, escape)
       end
     end
     if EXTERNAL_FILE ~= "" then
@@ -745,72 +826,83 @@ local function section_2_files(library_dir)
   end
 end
 
--- Walks Root() down to a pool. Two routes: the long address the conductor
--- assumed, and DataPool(), which published timecode plugins actually use.
-local function find_pool(root, pool_name)
-  local short = nil
+-- ------------------------------------------------- the pool the show is in
+--
+-- This is the correction that version 1.1 exists for. DataPool() is the pool
+-- the user is working in; Root().ShowData.DataPools.Default is pool 1 and is
+-- only the same thing by accident. Everything the probe reads or writes goes
+-- through here; the Default route is read once, for the comparison line.
+
+local POOL = {
+  handle = nil,     -- DataPool()
+  no = nil,         -- its number, 2 on Tobi's show
+  name = nil,
+  default = nil,    -- Root().ShowData.DataPools.Default, for comparison only
+  default_no = nil,
+  same = nil,
+}
+
+local function resolve_pool(root)
   if type(DataPool) == "function" then
+    pcall(function() POOL.handle = DataPool() end)
+  end
+  if POOL.handle ~= nil then
+    POOL.no = number_of(POOL.handle)
+    POOL.name = name_of(POOL.handle)
+  end
+  if root ~= nil then
     pcall(function()
-      local pool = DataPool()
-      if pool ~= nil then
-        short = index_quiet(pool, pool_name)
-      end
+      local show_data = index_quiet(root, "ShowData")
+      if show_data == nil then return end
+      local pools = index_quiet(show_data, "DataPools")
+      if pools == nil then return end
+      POOL.default = index_quiet(pools, "Default") or index_quiet(pools, 1)
     end)
   end
-  if root == nil then
-    if short ~= nil then
-      return short, "DataPool()." .. pool_name
-    end
-    return nil, "Root() gave nothing and DataPool() did not help"
+  if POOL.default ~= nil then
+    POOL.default_no = number_of(POOL.default)
   end
-  -- The long route, one step at a time, so a broken link can be named.
-  local long, stopped_at = nil, nil
-  local show_data = index_quiet(root, "ShowData")
-  if show_data == nil then
-    show_data = get_quiet(root, "Get", "ShowData")
+  if POOL.handle ~= nil and POOL.default ~= nil then
+    POOL.same = (S(POOL.handle) == S(POOL.default))
   end
-  if show_data == nil then
-    stopped_at = "Root().ShowData is nil"
-  else
-    local data_pools = index_quiet(show_data, "DataPools")
-    if data_pools == nil then
-      stopped_at = "Root().ShowData.DataPools is nil"
-    else
-      local default = index_quiet(data_pools, "Default") or index_quiet(data_pools, 1)
-      if default == nil then
-        stopped_at = "DataPools.Default is nil"
-      else
-        long = index_quiet(default, pool_name)
-        if long == nil then
-          stopped_at = "DataPools.Default." .. pool_name .. " is nil"
-        end
-      end
-    end
-  end
-
-  if long ~= nil then
-    local same = (short ~= nil) and (S(short) == S(long))
-    return long, string.format("Root().ShowData.DataPools.Default.%s (DataPool() route: %s)",
-      pool_name, short == nil and "no handle" or (same and "same handle" or "DIFFERENT handle"))
-  end
-  if short ~= nil then
-    return short, "DataPool()." .. pool_name .. " -- the long route failed: " .. S(stopped_at)
-  end
-  return nil, S(stopped_at)
+  return POOL.handle
 end
 
--- Finds the child whose number matches. MA3 pool indexes and displayed
+-- Every object lookup in this probe goes through here.
+local function pool_child(child_name)
+  if POOL.handle == nil then
+    return nil, "DataPool() gave no handle"
+  end
+  local child = index_quiet(POOL.handle, child_name)
+  if child == nil then
+    child = get_quiet(POOL.handle, "Get", child_name)
+  end
+  if child == nil then
+    return nil, "DataPool()." .. child_name .. " is nil"
+  end
+  return child, "DataPool()." .. child_name
+end
+
+-- What the old route would have given, logged so the difference is on record
+-- and nobody re-introduces it.
+local function default_child(child_name)
+  if POOL.default == nil then
+    return nil
+  end
+  return index_quiet(POOL.default, child_name)
+end
+
+-- Finds the child whose displayed number matches. Pool indexes and displayed
 -- numbers need not agree, so match on No first and fall back to position.
 local function child_by_number(pool, number)
+  if pool == nil then
+    return nil, "no pool handle"
+  end
   local kids = select(1, children_of(pool))
   for i = 1, #kids do
-    local child = kids[i]
-    local no = index_quiet(child, "no")
-    if no == nil then
-      no = get_quiet(child, "Get", "No")
-    end
+    local no = number_of(kids[i])
     if no ~= nil and tostring(no) == tostring(number) then
-      return child, "matched No"
+      return kids[i], "matched No"
     end
   end
   local direct = index_quiet(pool, number)
@@ -820,83 +912,45 @@ local function child_by_number(pool, number)
   return nil, "no child with that number"
 end
 
-local function section_3_object_model(root)
-  section(3, "Object model: timecodes and sequences")
+local function first_child(pool)
+  local kids = select(1, children_of(pool))
+  return kids[1]
+end
 
-  local timecodes, why = find_pool(root, "Timecodes")
-  kv("Timecodes pool", timecodes ~= nil and handle_label(timecodes) or "nil")
-  kv("  route", why)
-  if timecodes == nil then
-    sub("Root() itself, so the next run knows where to walk instead")
-    describe(root, "Root()", { dump = false, child_limit = 30 })
-    return nil, nil
-  end
-
-  describe(timecodes, "Timecodes pool", { child_limit = 40 })
-
-  local timecode, how = child_by_number(timecodes, TIMECODE_NO)
-  kv("timecode " .. TIMECODE_NO .. " found by", how)
-  if timecode ~= nil then
-    describe(timecode, "Timecode " .. TIMECODE_NO, { child_limit = 20 })
-
-    sub("Walking down: TrackGroup -> Track -> TimeRange -> Event")
-    local groups = select(1, children_of(timecode))
-    for gi = 1, math.min(#groups, 3) do
-      local group = groups[gi]
-      describe(group, string.format("TrackGroup [%d]", gi), { pairs = false, child_limit = 20 })
-      local tracks = select(1, children_of(group))
-      for ti = 1, math.min(#tracks, 3) do
-        local track = tracks[ti]
-        describe(track, string.format("Track [%d.%d]", gi, ti), { pairs = false, child_limit = 20 })
-        local ranges = select(1, children_of(track))
-        for ri = 1, math.min(#ranges, 2) do
-          local range = ranges[ri]
-          describe(range, string.format("Track child [%d.%d.%d]", gi, ti, ri),
-            { pairs = false, child_limit = 20 })
-          local events = select(1, children_of(range))
-          for ei = 1, math.min(#events, 3) do
-            describe(events[ei], string.format("Event [%d.%d.%d.%d]", gi, ti, ri, ei),
-              { pairs = false, children = false, dump = false })
-          end
-        end
-      end
+-- The one child of that class, and where it sits. A TrackGroup answers with
+-- [1] = MarkerTrack and [2] = Track on a console that has a marker track, so
+-- "the first child" is the wrong question to ask.
+local function child_of_class(parent, class)
+  local kids = select(1, children_of(parent))
+  for i = 1, #kids do
+    local c = class_of(kids[i])
+    if c ~= nil and S(c):lower() == S(class):lower() then
+      return kids[i], i
     end
   end
+  return nil, nil
+end
 
-  sub("Sequences")
-  local sequences = find_pool(root, "Sequences")
-  kv("Sequences pool", sequences ~= nil and handle_label(sequences) or "nil")
-  local sequence = nil
-  if sequences ~= nil then
-    list_children(sequences, "    ", 40)
-    sequence = child_by_number(sequences, SEQUENCE_NO)
-    if sequence ~= nil then
-      describe(sequence, "Sequence " .. SEQUENCE_NO, { pairs = false, child_limit = 10 })
-      sub("Cues of sequence " .. SEQUENCE_NO)
-      local cue_container = index_quiet(sequence, "Cues") or sequence
-      local cues = select(1, children_of(cue_container))
-      wf("    %d cue children", #cues)
-      for i = 1, math.min(#cues, 40) do
-        local cue = cues[i]
-        wf("    cue [%d] no=%s name=%s class=%s", i,
-          S(index_quiet(cue, "no") or get_quiet(cue, "Get", "No")),
-          S(index_quiet(cue, "name") or get_quiet(cue, "Get", "Name")),
-          S(get_quiet(cue, "GetClass")))
-      end
-      if cues[1] ~= nil then
-        describe(cues[1], "First cue in detail", { pairs = false, children = true, dump = false })
-      end
+-- Which children are new since the snapshot. Handles compare by their address
+-- string, which is unique per object.
+local function snapshot_children(parent)
+  local kids = select(1, children_of(parent))
+  local seen = {}
+  for i = 1, #kids do
+    seen[S(kids[i])] = true
+  end
+  return seen
+end
+
+local function new_children(parent, before)
+  local kids = select(1, children_of(parent))
+  local out = {}
+  for i = 1, #kids do
+    if not before[S(kids[i])] then
+      out[#out + 1] = { handle = kids[i], position = i }
     end
   end
-
-  sub("Free functions that name objects directly")
-  try("SelectedTimecode()", SelectedTimecode)
-  try("SelectedSequence()", SelectedSequence)
-  try("CurrentUser()", CurrentUser)
-  try("DataPool()", DataPool)
-  try("ShowData()", ShowData)
-
-  return timecode, sequence
+  return out, kids
 end
 
 -- Everything the probe creates is remembered here so section 9 can undo it.
@@ -905,8 +959,27 @@ end
 -- itself, so the parent has to be remembered alongside the handle.
 local created = { handles = {}, commands = {} }
 
--- The track group number section 5 stores into, so section 9 can delete it.
-local probe_group_no = nil
+-- Every level of the timecode tree the probe got hold of, for section 8.
+local levels = {}
+
+-- `own` is the important flag: section 8 writes a test string into properties,
+-- and it may only ever do that to objects this probe created itself. Tobi's own
+-- track groups and events are dumped and read, never written.
+local function remember_level(class, handle, addr, own)
+  if handle == nil then
+    return
+  end
+  for i = 1, #levels do
+    if S(levels[i].handle) == S(handle) then
+      if own and not levels[i].own then
+        levels[i].own = true
+        levels[i].addr = addr or levels[i].addr
+      end
+      return
+    end
+  end
+  levels[#levels + 1] = { class = class, handle = handle, addr = addr, own = own or false }
+end
 
 local function remember_handle(handle, note, parent)
   if handle ~= nil then
@@ -929,8 +1002,199 @@ local function position_in_parent(parent, handle)
   return nil
 end
 
+-- The numbers the probe really works with, once the pool has been asked.
+local RESOLVED = { timecode_no = TIMECODE_NO, sequence_no = SEQUENCE_NO }
+
+local function section_3_object_model(root)
+  section(3, "The current DataPool, its timecodes and its sequences")
+
+  sub("Which pool is the show working in?")
+  try("DataPool()", DataPool)
+  kv("DataPool()", POOL.handle ~= nil and handle_label(POOL.handle) or "nil")
+  kv("  its No", POOL.no)
+  kv("  its Name", POOL.name)
+  kv("DataPools.Default (comparison only)",
+    POOL.default ~= nil and handle_label(POOL.default) or "nil")
+  kv("  its No", POOL.default_no)
+  kv("same handle?", POOL.same)
+  if POOL.same == false then
+    w("    -> The two are DIFFERENT. Version 1.0 read the Default pool and")
+    w("       therefore found nothing. Everything below uses DataPool().")
+  end
+  local pool_addr = "ShowData.DataPools." .. S(POOL.no)
+  kv("address prefix for this pool", pool_addr)
+
+  sub("How the importer could let the user pick a timecode")
+  local timecodes, how = pool_child("Timecodes")
+  kv("Timecodes pool", timecodes ~= nil and handle_label(timecodes) or "nil")
+  kv("  route", how)
+  local default_tcs = default_child("Timecodes")
+  kv("  the Default pool's Timecodes (comparison)",
+    default_tcs ~= nil and (S(select(3, children_of(default_tcs))) .. " children") or "nil")
+
+  if timecodes ~= nil then
+    w("    every timecode in the current pool:")
+    local kids = select(1, children_of(timecodes))
+    if #kids == 0 then
+      w("      (none -- the pool is empty)")
+    end
+    for i = 1, #kids do
+      wf("      [%d] %s  no=%s", i, handle_label(kids[i]), S(number_of(kids[i])))
+    end
+  end
+  try("SelectedTimecode()", SelectedTimecode)
+  try("SelectedSequence()", SelectedSequence)
+  try("ObjectList(\"Timecode " .. TIMECODE_NO .. "\")", function()
+    local list = ObjectList("Timecode " .. TIMECODE_NO)
+    if type(list) ~= "table" then
+      return list
+    end
+    return "table with " .. #list .. " entries, [1] = " .. S(list[1])
+  end)
+  try("ObjectList(\"Timecode *\")", function()
+    local list = ObjectList("Timecode *")
+    if type(list) ~= "table" then
+      return list
+    end
+    return "table with " .. #list .. " entries"
+  end)
+
+  if timecodes == nil then
+    w("  no Timecodes pool -- the rest of this section cannot run")
+    return nil, nil
+  end
+
+  describe(timecodes, "Timecodes pool", { child_limit = 40 })
+
+  local timecode, found_how = child_by_number(timecodes, TIMECODE_NO)
+  kv("timecode " .. TIMECODE_NO .. " found by", found_how)
+  if timecode == nil then
+    timecode = first_child(timecodes)
+    if timecode ~= nil then
+      RESOLVED.timecode_no = number_of(timecode) or TIMECODE_NO
+      wf("    timecode %d does not exist here -- falling back to the first one, No %s",
+        TIMECODE_NO, S(RESOLVED.timecode_no))
+    else
+      w("    the pool has no timecode at all. The command line will be asked to")
+      w("    create one, and section 9 removes it again.")
+    end
+  end
+
+  if timecode ~= nil then
+    remember_level("Timecode", timecode, S(RESOLVED.timecode_no))
+    describe(timecode, "Timecode " .. S(RESOLVED.timecode_no), { child_limit = 20 })
+
+    sub("Walking down what is already there: TrackGroup -> Track -> TimeRange -> SubTrack -> Event")
+    w("  (an event that Tobi made BY HAND is the most valuable thing in this")
+    w("   listing -- its CueDestination shows the address form MA3 itself writes)")
+    local groups = select(1, children_of(timecode))
+    if #groups == 0 then
+      w("    the timecode has no track group yet")
+    end
+    for gi = 1, math.min(#groups, 3) do
+      local group = groups[gi]
+      remember_level("TrackGroup", group, string.format("%s.%d", S(RESOLVED.timecode_no), gi))
+      describe(group, string.format("TrackGroup [%d]", gi), { child_limit = 20 })
+      local tracks = select(1, children_of(group))
+      for ti = 1, math.min(#tracks, 4) do
+        local track = tracks[ti]
+        remember_level(S(class_of(track)), track,
+          string.format("%s.%d.%d", S(RESOLVED.timecode_no), gi, ti))
+        describe(track, string.format("Track [%d.%d]", gi, ti), { child_limit = 20 })
+        local ranges = select(1, children_of(track))
+        for ri = 1, math.min(#ranges, 2) do
+          local range = ranges[ri]
+          remember_level(S(class_of(range)), range,
+            string.format("%s.%d.%d.%d", S(RESOLVED.timecode_no), gi, ti, ri))
+          describe(range, string.format("Track child [%d.%d.%d]", gi, ti, ri), { child_limit = 20 })
+          local subs = select(1, children_of(range))
+          for si = 1, math.min(#subs, 2) do
+            local subtrack = subs[si]
+            remember_level(S(class_of(subtrack)), subtrack,
+              string.format("%s.%d.%d.%d.%d", S(RESOLVED.timecode_no), gi, ti, ri, si))
+            describe(subtrack, string.format("SubTrack [%d.%d.%d.%d]", gi, ti, ri, si),
+              { child_limit = 20 })
+            local events = select(1, children_of(subtrack))
+            for ei = 1, math.min(#events, 3) do
+              remember_level(S(class_of(events[ei])), events[ei],
+                string.format("%s.%d.%d.%d.%d.%d", S(RESOLVED.timecode_no), gi, ti, ri, si, ei))
+              describe(events[ei], string.format("Event [%d.%d.%d.%d.%d]", gi, ti, ri, si, ei),
+                { children = false })
+            end
+          end
+        end
+      end
+    end
+  end
+
+  sub("Sequences of the current pool")
+  local sequences = pool_child("Sequences")
+  kv("Sequences pool", sequences ~= nil and handle_label(sequences) or "nil")
+  local sequence = nil
+  if sequences ~= nil then
+    list_children(sequences, "    ", 40)
+    local seq_how
+    sequence, seq_how = child_by_number(sequences, SEQUENCE_NO)
+    kv("sequence " .. SEQUENCE_NO .. " found by", seq_how)
+    if sequence == nil then
+      sequence = first_child(sequences)
+      if sequence ~= nil then
+        RESOLVED.sequence_no = number_of(sequence) or SEQUENCE_NO
+        wf("    falling back to the first sequence, No %s", S(RESOLVED.sequence_no))
+      end
+    end
+    if sequence ~= nil then
+      describe(sequence, "Sequence " .. S(RESOLVED.sequence_no), { child_limit = 10 })
+    end
+  end
+
+  return timecode, sequence
+end
+
+-- ---------------------------------------------------------------- cue list
+-- Shared by sections 6 and 9, and it reads the CURRENT pool. Version 1.0 read
+-- the Default pool here, which is why the cue list never showed the cues the
+-- command line had just stored.
+
+local function cue_container()
+  local sequences = pool_child("Sequences")
+  if sequences == nil then
+    return nil, "no Sequences pool in the current data pool"
+  end
+  local sequence = child_by_number(sequences, RESOLVED.sequence_no)
+  if sequence == nil then
+    return nil, "sequence " .. S(RESOLVED.sequence_no) .. " not found in the current pool"
+  end
+  local container = index_quiet(sequence, "Cues")
+  if container == nil or type(container) == "function" then
+    container = sequence
+  end
+  return container
+end
+
+local function cue_list(title)
+  sub(title)
+  local container, why = cue_container()
+  if container == nil then
+    wf("    %s", S(why))
+    return 0
+  end
+  local cues = select(1, children_of(container))
+  wf("    %d cues in DataPool %s, Sequence %s", #cues, S(POOL.no), S(RESOLVED.sequence_no))
+  for i = 1, math.min(#cues, 60) do
+    wf("    cue [%d] no=%s name=%s class=%s", i,
+      S(number_of(cues[i])), S(name_of(cues[i])), S(class_of(cues[i])))
+  end
+  return #cues
+end
+
+-- ------------------------------------------------------------- section 4
+
 local function section_4_object_api(timecode, sequence)
   section(4, "Creating content through the object API")
+  w("  This never ran in version 1.0, because the timecode handle was nil.")
+  w("  What works here decides whether the importer can build with handles")
+  w("  (fast, no index guessing) or has to go through the command line.")
 
   if timecode == nil then
     w("  no timecode handle, nothing to create -- see section 3")
@@ -939,17 +1203,15 @@ local function section_4_object_api(timecode, sequence)
 
   -- Documented shapes (bambinito mirror of GetObjApiDescriptor):
   --   Append(handle[, class[, undo[, count]]])      -> child handle
+  --   Acquire(handle, class)                        -> existing or new child
   --   Insert(handle, child_index[, class[, undo]])  -> child handle
   --   Create(handle, child_index[, class[, undo]])  -> child handle
-  -- Only the first one is a plain "add at the end", so it is tried first.
   local function append_child(parent, class, note)
     local before = select(3, children_of(parent))
     local ok, value = try(string.format("parent:Append(%q)", S(class)), function()
       return parent:Append(class)
     end)
     if not ok or value == nil then
-      -- Acquire is what published timecode plugins use for TimeRange and
-      -- CmdSubTrack: "give me the child of that class, make one if needed".
       ok, value = try(string.format("parent:Acquire(%q)", S(class)), function()
         return parent:Acquire(class)
       end)
@@ -975,20 +1237,23 @@ local function section_4_object_api(timecode, sequence)
     wf("    child count %s -> %s", S(before), S(after))
     if ok and value ~= nil then
       remember_handle(value, note, parent)
+      remember_level(S(class), value, nil, true)
       return value
     end
     return nil
   end
 
   sub("Append a TrackGroup")
-  local group = append_child(timecode, "TrackGroup", "TrackGroup on timecode " .. TIMECODE_NO)
+  local group = append_child(timecode, "TrackGroup", "TrackGroup on timecode " .. S(RESOLVED.timecode_no))
   kv("TrackGroup handle", group and handle_label(group) or "nil")
-
   if group == nil then
     w("  without a TrackGroup the object route stops here; section 5 tries the command line")
     return nil
   end
-  describe(group, "New TrackGroup", { pairs = false, child_limit = 10, dump = false })
+  try("group:Set('Name', 'steelblue object api')", function()
+    return group:Set("Name", "steelblue object api")
+  end)
+  describe(group, "New TrackGroup", { child_limit = 10 })
 
   sub("Append a Track inside it")
   local track = append_child(group, "Track", "Track in the new TrackGroup")
@@ -996,79 +1261,112 @@ local function section_4_object_api(timecode, sequence)
   if track == nil then
     return group
   end
-
   try("track:Set('Name', 'steelblue probe')", function()
     return track:Set("Name", "steelblue probe")
   end)
+  w("    what the group holds now -- is there a MarkerTrack next to the Track?")
+  list_children(group, "      ", 10)
 
-  sub("Point the track at sequence " .. SEQUENCE_NO)
-  -- Which property carries the assignment is exactly what this asks. Set() is
-  -- documented as taking a STRING value, so the string form is tried first and
-  -- the handle form second -- if the handle form works, the importer is simpler.
+  sub("Point the track at sequence " .. S(RESOLVED.sequence_no))
+  -- Three routes, because the importer only needs one of them to work:
+  -- a plain address string, the sequence HANDLE, and the command line.
+  local seq_address = string.format("ShowData.DataPools.%s.Sequences.%s",
+    S(POOL.no), S(RESOLVED.sequence_no))
   local targets = { "Target", "Object", "Assignment", "Sequence", "Destination" }
   for i = 1, #targets do
     local property = targets[i]
-    try(string.format("track:Set(%q, \"Sequence %d\")", property, SEQUENCE_NO), function()
-      return track:Set(property, "Sequence " .. SEQUENCE_NO)
+    try(string.format("track:Set(%q, %q)", property, seq_address), function()
+      return track:Set(property, seq_address)
     end)
-    kv("  read back " .. property, get_quiet(track, "Get", property))
-    try(string.format("track:Set(%q, <sequence handle>)", property), function()
-      return track:Set(property, sequence)
+    kv("  read back " .. property, select(1, read_property(track, property)))
+    try(string.format("track:Set(%q, \"Sequence %s\")", property, S(RESOLVED.sequence_no)), function()
+      return track:Set(property, "Sequence " .. S(RESOLVED.sequence_no))
     end)
-    kv("  read back " .. property, get_quiet(track, "Get", property))
-    if EDIT_ROLE ~= nil then
-      kv("  read back " .. property .. " (Roles.Edit)", get_quiet(track, "Get", property, EDIT_ROLE))
+    kv("  read back " .. property, select(1, read_property(track, property)))
+    if sequence ~= nil then
+      try(string.format("track:Set(%q, <sequence handle>)", property), function()
+        return track:Set(property, sequence)
+      end)
+      kv("  read back " .. property, select(1, read_property(track, property)))
     end
   end
+  w("    and the same thing from the command line, on the object API's own track:")
+  local track_addr = get_quiet(track, "Addr")
+  kv("    track:Addr()", track_addr)
+  kv("    track:ToAddr()", get_quiet(track, "ToAddr"))
 
   sub("The track after the assignment attempts")
-  describe(track, "New Track", { pairs = false, child_limit = 10 })
+  describe(track, "New Track", { child_limit = 10 })
 
-  sub("Append an Event")
-  local event_parent = track
-  local kids = select(1, children_of(track))
-  if #kids > 0 then
-    wf("    the track already has %d child/children -- trying the first one as the event parent", #kids)
-    event_parent = kids[1]
-    describe(event_parent, "Track child (TimeRange?)", { pairs = false, children = false, dump = false })
+  sub("Append a TimeRange, a CmdSubTrack and a CmdEvent")
+  local range = append_child(track, "TimeRange", "TimeRange in the new Track")
+  kv("TimeRange handle", range and handle_label(range) or "nil")
+  if range == nil then
+    return group, track, nil
   end
+  describe(range, "New TimeRange", { child_limit = 10, dump = false })
+
+  local subtrack = append_child(range, "CmdSubTrack", "CmdSubTrack in the new TimeRange")
+  kv("CmdSubTrack handle", subtrack and handle_label(subtrack) or "nil")
+  if subtrack == nil then
+    return group, track, nil
+  end
+  describe(subtrack, "New CmdSubTrack", { child_limit = 10, dump = false })
 
   local event = nil
-  local event_classes = { "Event", "TimecodeEvent", "CmdEvent" }
+  local event_classes = { "CmdEvent", "Event", "TimecodeEvent" }
   for i = 1, #event_classes do
     if event == nil then
-      event = append_child(event_parent, event_classes[i], "Event (" .. event_classes[i] .. ")")
+      event = append_child(subtrack, event_classes[i], "Event (" .. event_classes[i] .. ")")
     end
   end
   kv("Event handle", event and handle_label(event) or "nil")
-  if event ~= nil then
-    describe(event, "New Event, untouched", { pairs = false, children = false, dump = false })
+  if event == nil then
+    return group, track, nil
   end
+
+  sub("Setting the event up through the object API alone")
+  try("event:Set('Time', 12.5)", function() return event:Set("Time", 12.5) end)
+  kv("  read back Time", select(1, read_property(event, "Time")))
+  try("event:Set('Token', 'Goto')", function() return event:Set("Token", "Goto") end)
+  kv("  read back Token", select(1, read_property(event, "Token")))
+  local cue_address = string.format("ShowData.DataPools.%s.Sequences.%s.1",
+    S(POOL.no), S(RESOLVED.sequence_no))
+  try(string.format("event:Set('CueDestination', %q)", cue_address), function()
+    return event:Set("CueDestination", cue_address)
+  end)
+  kv("  read back CueDestination", select(1, read_property(event, "CueDestination")))
+
+  sub("Dump of the event the object API built -- this is the verification")
+  describe(event, "New Event after Set", { children = false })
 
   return group, track, event
 end
 
-local function section_5_command_line(timecode, sequence)
-  section(5, "Creating content from the command line")
+-- ------------------------------------------------------------- section 5
+
+-- The track group number section 5 stores into, so section 9 can delete it.
+local probe_group_no = nil
+local probe_group_handle = nil
+local probe_group_name = "steelblue probe"
+local timecode_was_created_by_probe = false
+
+local function section_5_command_line(timecode)
+  section(5, "The command line, and which number the event really gets")
 
   if type(Cmd) ~= "function" then
     w("  Cmd is not available")
-    return
+    return nil, nil
   end
 
   local function run(command)
     created.commands[#created.commands + 1] = command
-    try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
+    local ok, answer = try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
+    return ok and answer or nil
   end
 
-  -- The chain below is the one a shipping REAPER->MA3 bridge uses
-  -- (github.com/mittim88/TCHelper). Cmd answers "Ok", "Syntax Error" or
-  -- "Illegal Command", so the return value alone already grades each line.
-  --
-  -- Address shape: Timecode . TrackGroup . Track . TimeRange . SubTrack . Event
-  -- A TimeRange can hold a CmdSubTrack or a FaderSubTrack, which is why the
-  -- sub-track line needs the Type keyword.
-  --
+  local TC = S(RESOLVED.timecode_no)
+
   -- CG is the track group number the probe works in: one past whatever the
   -- timecode already has, so no existing group is ever addressed by accident.
   local CG = 1
@@ -1076,56 +1374,204 @@ local function section_5_command_line(timecode, sequence)
     CG = (tonumber(select(3, children_of(timecode))) or 0) + 1
   end
   probe_group_no = CG
+  kv("timecode the probe addresses", TC)
   kv("track group the probe writes into", CG)
+  kv("the pool the OBJECT side is reading", S(POOL.no))
 
   sub("Does Cmd answer at all?")
   run("Echo \"steelblue probe\"")
 
-  sub("Track group and track")
-  run(string.format("Store TC %d.%d \"steelblue probe\"", TIMECODE_NO, CG))
-  run(string.format("Store TC %d.%d.1", TIMECODE_NO, CG))
-  run(string.format("Assign Sequence %d at TC %d.%d.1", SEQUENCE_NO, TIMECODE_NO, CG))
+  sub("Track group -- and which pool does the command line write into?")
+  local before_current = timecode ~= nil and select(3, children_of(timecode)) or nil
+  local default_tcs = default_child("Timecodes")
+  local default_tc = default_tcs ~= nil and child_by_number(default_tcs, RESOLVED.timecode_no) or nil
+  local before_default = default_tc ~= nil and select(3, children_of(default_tc)) or nil
+  run(string.format("Store TC %s.%d %q", TC, CG, probe_group_name))
+  local after_current = timecode ~= nil and select(3, children_of(timecode)) or nil
+  local after_default = default_tc ~= nil and select(3, children_of(default_tc)) or nil
+  wf("    track groups in the CURRENT pool's timecode: %s -> %s", S(before_current), S(after_current))
+  wf("    track groups in the DEFAULT pool's timecode: %s -> %s", S(before_default), S(after_default))
+  w("    (whichever number moved is the pool the command line works in)")
 
-  sub("Time range and command sub-track")
-  run(string.format("Store TC %d.%d.1.1", TIMECODE_NO, CG))
-  run(string.format("Store Type \"CmdSubTrack\" Timecode %d.%d.1.1.1", TIMECODE_NO, CG))
-
-  sub("An event, and its three properties")
-  run(string.format("Store TC %d.%d.1.1.1.1", TIMECODE_NO, CG))
-  run(string.format("Set TC %d.%d.1.1.1.1 Property \"time\" 12.437", TIMECODE_NO, CG))
-  run(string.format("Set TC %d.%d.1.1.1.1 Property \"token\" \"goto\"", TIMECODE_NO, CG))
-  run(string.format("Set TC %d.%d.1.1.1.1 Property \"Status\" \"On\"", TIMECODE_NO, CG))
-  run(string.format(
-    "Set TC %d.%d.1.1.1.1 Property \"cuedestination\" \"ShowData.DataPools.Default.Sequences.%d.1\"",
-    TIMECODE_NO, CG, SEQUENCE_NO))
-
-  sub("A second event, to see whether the numbering is ours to choose")
-  run(string.format("Store TC %d.%d.1.1.1.5", TIMECODE_NO, CG))
-  run(string.format("Set TC %d.%d.1.1.1.5 Property \"time\" 30.5", TIMECODE_NO, CG))
-  run(string.format("Set TC %d.%d.1.1.1.5 Property \"token\" \"Go+\"", TIMECODE_NO, CG))
-
-  sub("Long keyword spellings, in case the short ones are the problem")
-  run(string.format("Store Timecode %d.%d.2", TIMECODE_NO, CG))
-  run(string.format("Label Timecode %d.%d.2 \"steelblue probe track 2\"", TIMECODE_NO, CG))
-
-  sub("The timecode after the command line had its turn")
-  if timecode ~= nil then
-    describe(timecode, "Timecode " .. TIMECODE_NO .. " after Cmd", { pairs = false, child_limit = 20 })
-    local groups = select(1, children_of(timecode))
-    for gi = 1, math.min(#groups, 4) do
-      describe(groups[gi], "TrackGroup [" .. gi .. "] after Cmd",
-        { pairs = false, child_limit = 20, dump = false })
-      local tracks = select(1, children_of(groups[gi]))
-      for ti = 1, math.min(#tracks, 4) do
-        describe(tracks[ti], string.format("Track [%d.%d] after Cmd", gi, ti),
-          { pairs = false, child_limit = 20, dump = false })
+  if timecode == nil then
+    w("    the pool had no timecode before; looking again now")
+    local timecodes = pool_child("Timecodes")
+    if timecodes ~= nil then
+      local fresh = child_by_number(timecodes, RESOLVED.timecode_no)
+      if fresh ~= nil then
+        timecode = fresh
+        timecode_was_created_by_probe = true
+        w("    the command line CREATED the timecode -- section 9 removes it again")
       end
     end
   end
+
+  local group = timecode ~= nil and select(1, child_by_number(timecode, CG)) or nil
+  if group == nil and timecode ~= nil then
+    local kids = select(1, children_of(timecode))
+    group = kids[CG]
+  end
+  kv("track group handle", group and handle_label(group) or "nil")
+  probe_group_handle = group
+  remember_level("TrackGroup", group, string.format("%s.%d", TC, CG), true)
+
+  sub("Track -- and where does the command line's \"track 1\" actually land?")
+  run(string.format("Store TC %s.%d.1", TC, CG))
+  run(string.format("Assign Sequence %s at TC %s.%d.1", S(RESOLVED.sequence_no), TC, CG))
+  if group ~= nil then
+    w("    children of the track group, with their classes:")
+    list_children(group, "      ", 10)
+    local marker, marker_at = child_of_class(group, "MarkerTrack")
+    local track, track_at = child_of_class(group, "Track")
+    kv("    MarkerTrack sits at child index", marker ~= nil and marker_at or "no MarkerTrack here")
+    kv("    Track sits at child index", track ~= nil and track_at or "no Track here")
+    w("    -> the command line address \".1\" produced the object above; if the")
+    w("       Track is at index 2, then address N means visible track N, not child N.")
+  end
+  local track = group ~= nil and select(1, child_of_class(group, "Track")) or nil
+  remember_level("Track", track, string.format("%s.%d.1", TC, CG), true)
+  if track ~= nil then
+    describe(track, "The track the command line made", { child_limit = 10 })
+  end
+
+  sub("Time range and command sub-track")
+  run(string.format("Store TC %s.%d.1.1", TC, CG))
+  run(string.format("Store Type \"CmdSubTrack\" Timecode %s.%d.1.1.1", TC, CG))
+  local range = track ~= nil and select(1, child_of_class(track, "TimeRange")) or nil
+  if range == nil and track ~= nil then
+    range = select(1, children_of(track))[1]
+  end
+  remember_level("TimeRange", range, string.format("%s.%d.1.1", TC, CG), true)
+  if range ~= nil then
+    w("    children of the time range:")
+    list_children(range, "      ", 10)
+  end
+  local subtrack = range ~= nil and select(1, child_of_class(range, "CmdSubTrack")) or nil
+  if subtrack == nil and range ~= nil then
+    subtrack = select(1, children_of(range))[1]
+  end
+  remember_level("CmdSubTrack", subtrack, string.format("%s.%d.1.1.1", TC, CG), true)
+  kv("CmdSubTrack handle", subtrack and handle_label(subtrack) or "nil")
+
+  -- ------------------------------------------------ the event-number question
+  --
+  -- Run 2: "Store TC 1.1.1.1.1.5" -> OK, "Set TC 1.1.1.1.1.5 ..." -> Illegal
+  -- object. The console numbers the event itself. So after every Store the
+  -- probe asks the object tree which child is new, and addresses THAT.
+
+  local function store_event(command, label)
+    sub(label)
+    local before = subtrack ~= nil and snapshot_children(subtrack) or nil
+    local before_count = subtrack ~= nil and select(3, children_of(subtrack)) or nil
+    local answer = run(command)
+    if subtrack == nil then
+      w("    no CmdSubTrack handle, so the new event cannot be identified")
+      return nil, nil, answer
+    end
+    local fresh, all = new_children(subtrack, before)
+    wf("    events in the sub-track: %s -> %s", S(before_count), S(#all))
+    w("    every event the sub-track holds now:")
+    for i = 1, #all do
+      wf("      [%d] %s  Time=%s Token=%s CueDestination=%s", i, handle_label(all[i]),
+        S(select(1, read_property(all[i], "Time"))),
+        S(select(1, read_property(all[i], "Token"))),
+        S(select(1, read_property(all[i], "CueDestination"))))
+    end
+    if #fresh == 0 then
+      w("    NOTHING new appeared -- the Store did not create an event here")
+      return nil, nil, answer
+    end
+    if #fresh > 1 then
+      wf("    %d new children at once -- listing them all", #fresh)
+    end
+    local entry = fresh[#fresh]
+    wf("    the new event is child number %d (the command asked for something else if")
+    wf("    that number differs from the address above); handle %s", entry.position,
+      handle_label(entry.handle))
+    remember_level("CmdEvent", entry.handle,
+      string.format("%s.%d.1.1.1.%d", TC, CG, entry.position), true)
+    return entry.handle, entry.position, answer
+  end
+
+  local event, event_index = store_event(
+    string.format("Store TC %s.%d.1.1.1.1", TC, CG),
+    "The first event -- asked for number 1")
+
+  if event ~= nil then
+    sub("Setting that event, addressed by the index the tree really shows")
+    run(string.format("Set TC %s.%d.1.1.1.%d Property \"time\" 12.437", TC, CG, event_index))
+    kv("  read back Time", select(1, read_property(event, "Time")))
+    run(string.format("Set TC %s.%d.1.1.1.%d Property \"token\" \"goto\"", TC, CG, event_index))
+    kv("  read back Token", select(1, read_property(event, "Token")))
+
+    sub("The cue destination -- three address forms, and what MA3 stores back")
+    -- Version 1.0 wrote ".Default.", which is pool 1. The current pool has to
+    -- be in the address, and the relative form is worth a try because that is
+    -- what a hand-made event's Dump tends to show.
+    local forms = {
+      string.format("ShowData.DataPools.%s.Sequences.%s.1", S(POOL.no), S(RESOLVED.sequence_no)),
+      string.format("ShowData.DataPools.Default.Sequences.%s.1", S(RESOLVED.sequence_no)),
+      string.format("Sequences.%s.1", S(RESOLVED.sequence_no)),
+      string.format("Sequence %s Cue 1", S(RESOLVED.sequence_no)),
+    }
+    for i = 1, #forms do
+      run(string.format("Set TC %s.%d.1.1.1.%d Property \"cuedestination\" %q",
+        TC, CG, event_index, forms[i]))
+      kv("  read back CueDestination", select(1, read_property(event, "CueDestination")))
+      if EDIT_ROLE ~= nil then
+        kv("  read back CueDestination (Roles.Edit)",
+          get_quiet(event, "Get", "CueDestination", EDIT_ROLE))
+      end
+    end
+    w("    and the dump, which shows the canonical form MA3 keeps:")
+    write_dump(event, "    ")
+  end
+
+  -- Does the next number do what one would hope?
+  local next_index = (event_index or 0) + 1
+  local event2, index2 = store_event(
+    string.format("Store TC %s.%d.1.1.1.%d", TC, CG, next_index),
+    string.format("A second event -- asked for number %d, the one after the first", next_index))
+  if event2 ~= nil then
+    wf("    asked for %d, got child %s -- %s", next_index, S(index2),
+      (index2 == next_index) and "the console agreed" or "the console picked its own number")
+    run(string.format("Set TC %s.%d.1.1.1.%d Property \"time\" 30.5", TC, CG, index2))
+    kv("  read back Time", select(1, read_property(event2, "Time")))
+  end
+
+  -- And the gap that broke run 2.
+  local event3, index3 = store_event(
+    string.format("Store TC %s.%d.1.1.1.5", TC, CG),
+    "A third event -- asked for number 5, leaving a gap on purpose")
+  if event3 ~= nil then
+    wf("    asked for 5, got child %s -- run 2's \"Illegal object\" is explained if", S(index3))
+    wf("    that is not 5. Setting it on child %s now:", S(index3))
+    run(string.format("Set TC %s.%d.1.1.1.%d Property \"time\" 45.25", TC, CG, index3))
+    kv("  read back Time", select(1, read_property(event3, "Time")))
+    w("    and the same Set on the number that was ASKED for, to show the difference:")
+    run(string.format("Set TC %s.%d.1.1.1.5 Property \"time\" 45.25", TC, CG))
+  end
+
+  -- Can an event be named on the way in?
+  local event4 = store_event(
+    string.format("Store TC %s.%d.1.1.1 %q", TC, CG, "steelblue named event"),
+    "Storing at the SUB-TRACK level with a name -- does the new event get it?")
+  if event4 ~= nil then
+    kv("    the new event's Name", name_of(event4))
+  end
+
+  sub("The track group after the command line had its turn")
+  if group ~= nil then
+    write_dump(group, "    ")
+  end
+
+  return event, subtrack
 end
 
-local function section_6_cues(root, sequence)
-  section(6, "Creating and naming cues")
+-- ------------------------------------------------------------- section 6
+
+local function section_6_cues()
+  section(6, "Creating and naming cues -- now read from the pool they land in")
 
   if type(Cmd) ~= "function" then
     w("  Cmd is not available")
@@ -1137,82 +1583,103 @@ local function section_6_cues(root, sequence)
     try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
   end
 
-  local function cue_list(title)
-    sub(title)
-    local sequences = find_pool(root, "Sequences")
-    if sequences == nil then
-      w("    no sequence pool")
-      return
-    end
-    local seq = child_by_number(sequences, SEQUENCE_NO)
-    if seq == nil then
-      w("    sequence " .. SEQUENCE_NO .. " not found")
-      return
-    end
-    local container = index_quiet(seq, "Cues") or seq
-    local cues = select(1, children_of(container))
-    wf("    %d cues", #cues)
-    for i = 1, math.min(#cues, 60) do
-      local cue = cues[i]
-      wf("    cue [%d] no=%s name=%s", i,
-        S(index_quiet(cue, "no") or get_quiet(cue, "Get", "No")),
-        S(index_quiet(cue, "name") or get_quiet(cue, "Get", "Name")))
-    end
-  end
+  local SEQ = S(RESOLVED.sequence_no)
 
   cue_list("Cues before anything is stored")
 
   -- The 2.3 Store page spells the option /NoConfirmation; /NoConfirm is the
-  -- abbreviation the command line normally accepts. Both are tried once, and
-  -- the return value says which one this build likes.
+  -- abbreviation the command line normally accepts. Both are tried once.
   sub("Store an empty cue with an empty programmer")
-  run(string.format("Store Sequence %d Cue %d /NoConfirmation", SEQUENCE_NO, CUE_FIRST))
-  run(string.format("Store Sequence %d Cue %d /NoConfirm", SEQUENCE_NO, CUE_FIRST + 1))
-  run(string.format("Store Sequence %d Cue %d", SEQUENCE_NO, CUE_FIRST + 2))
-  cue_list("Cues after the three Store calls")
+  run(string.format("Store Sequence %s Cue %d /NoConfirmation", SEQ, CUE_FIRST))
+  run(string.format("Store Sequence %s Cue %d /NoConfirm", SEQ, CUE_FIRST + 1))
+  run(string.format("Store Sequence %s Cue %d", SEQ, CUE_FIRST + 2))
+  cue_list("Cues after the three Store calls -- are empty cues created at all?")
 
   sub("Label them")
   for i = 0, CUE_COUNT - 1 do
-    run(string.format("Label Sequence %d Cue %d \"Probe %d\"",
-      SEQUENCE_NO, CUE_FIRST + i, CUE_FIRST + i))
+    run(string.format("Label Sequence %s Cue %d %q", SEQ, CUE_FIRST + i,
+      string.format("Probe %d", CUE_FIRST + i)))
   end
   cue_list("Cues after labelling")
 
   sub("Store again over an EXISTING cue -- is the name lost?")
-  -- This is the one that decides the importer's cue rule: existing cues must
-  -- survive untouched while missing ones are created empty and named.
-  run(string.format("Store Sequence %d Cue %d /NoConfirmation", SEQUENCE_NO, CUE_FIRST))
+  -- This decides the importer's cue rule: existing cues must survive untouched
+  -- while missing ones are created empty and named.
+  run(string.format("Store Sequence %s Cue %d /NoConfirmation", SEQ, CUE_FIRST))
   cue_list("After a plain second Store on cue " .. CUE_FIRST)
-  run(string.format("Store Sequence %d Cue %d /Merge /NoConfirmation", SEQUENCE_NO, CUE_FIRST))
+  run(string.format("Store Sequence %s Cue %d /Merge /NoConfirmation", SEQ, CUE_FIRST))
   cue_list("After Store /Merge on cue " .. CUE_FIRST .. " -- its name is the answer")
 end
 
+-- ------------------------------------------------------------- section 7
+
 local function section_7_time(timecode, event)
   section(7, "Time: unit, framerate, how a value is set")
+  w("  This never ran in version 1.0 either -- there was no event to ask.")
 
   if timecode ~= nil then
-    sub("Framerate of timecode " .. TIMECODE_NO)
+    sub("Framerate of timecode " .. S(RESOLVED.timecode_no))
     -- The 2.3 timecode settings page calls the property FrameReadout, with
-    -- values Default / Seconds / 24 fps / 25 fps / 30 fps / 60 fps. The others
-    -- are the spellings one would guess, kept so a wrong guess is visible.
+    -- values Default / Seconds / 24 fps / 25 fps / 30 fps / 60 fps.
     local names = { "FrameReadout", "Timedisplayformat", "Framerate", "FrameRate",
                     "Rate", "Duration", "TCSlot" }
+    local original = nil
     for i = 1, #names do
       local value, how = read_property(timecode, names[i])
       kv(names[i] .. " (" .. S(how) .. ")", value)
+      if names[i] == "FrameReadout" then
+        original = value
+      end
+    end
+    w("    the timecode's own dump, where the stored spelling is visible:")
+    write_dump(timecode, "    ")
+
+    sub("Setting the framerate to 25 fps and putting it back")
+    kv("original FrameReadout", original)
+    local TC = S(RESOLVED.timecode_no)
+    try("timecode:Set('FrameReadout', '25 fps')", function()
+      return timecode:Set("FrameReadout", "25 fps")
+    end)
+    kv("  read back FrameReadout", select(1, read_property(timecode, "FrameReadout")))
+    if type(Cmd) == "function" then
+      local command = string.format("Set TC %s Property \"FrameReadout\" \"25 fps\"", TC)
+      created.commands[#created.commands + 1] = command
+      try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
+      kv("  read back FrameReadout", select(1, read_property(timecode, "FrameReadout")))
+    end
+    if original ~= nil then
+      try("timecode:Set('FrameReadout', <original>)", function()
+        return timecode:Set("FrameReadout", original)
+      end)
+      if type(Cmd) == "function" then
+        local command = string.format("Set TC %s Property \"FrameReadout\" %q", TC, S(original))
+        created.commands[#created.commands + 1] = command
+        try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
+      end
+      kv("  FrameReadout restored to", select(1, read_property(timecode, "FrameReadout")))
+    else
+      w("    no original value was readable, so nothing was restored -- check by hand")
     end
   end
 
   if event == nil then
     w("")
-    w("  no event handle from section 4, so setting a time cannot be tested here")
+    w("  no event handle from sections 4 or 5, so setting a time cannot be tested")
     return
   end
 
+  sub("What the event's time looks like before anything is set")
+  local value, how = read_property(event, "Time")
+  wf("    Time = %s  (%s, via %s)", S(value), type(value), S(how))
+  if EDIT_ROLE ~= nil then
+    kv("    Time (Roles.Edit)", get_quiet(event, "Get", "Time", EDIT_ROLE))
+  end
+  w("    and in the dump, where the unit shows:")
+  write_dump(event, "    ")
+
   sub("Setting the event time -- number first, then a timecode string")
-  -- A posted show-file dump shows Time="1.04", i.e. seconds as a float, and a
-  -- REAPER bridge writes raw REAPER seconds. Both forms are tried anyway: what
-  -- comes back out is what the importer has to write in.
+  -- A posted show-file dump shows Time="1.04", i.e. seconds as a float. Both
+  -- forms are tried anyway: what comes back out is what the importer writes in.
   local attempts = {
     { label = "number 12.437", value = 12.437 },
     { label = "integer 12", value = 12 },
@@ -1220,196 +1687,150 @@ local function section_7_time(timecode, event)
     { label = "string \"00:00:12.50\"", value = "00:00:12.50" },
     { label = "string \"00:00:12:15\"", value = "00:00:12:15" },
   }
-  local properties = { "Time", "TimeCode", "Position", "Start" }
-  for p = 1, #properties do
-    local property = properties[p]
-    for a = 1, #attempts do
-      local attempt = attempts[a]
-      try(string.format("event:Set(%q, %s)", property, attempt.label), function()
-        return event:Set(property, attempt.value)
-      end)
-      local value, how = read_property(event, property)
-      wf("      read back %s = %s  (%s, via %s)", property, S(value), type(value), S(how))
+  for a = 1, #attempts do
+    local attempt = attempts[a]
+    try(string.format("event:Set('Time', %s)", attempt.label), function()
+      return event:Set("Time", attempt.value)
+    end)
+    local back, via = read_property(event, "Time")
+    wf("      read back Time = %s  (%s, via %s)", S(back), type(back), S(via))
+    if EDIT_ROLE ~= nil then
+      wf("      read back Time (Roles.Edit) = %s", S(get_quiet(event, "Get", "Time", EDIT_ROLE)))
     end
   end
 
-  sub("Setting the token and the target cue")
+  sub("Which other time-shaped properties answer at all")
+  for _, property in ipairs({ "TimeCode", "Position", "Start", "End", "Offset" }) do
+    local v, h = read_property(event, property)
+    kv("  " .. property, v ~= nil and (S(v) .. "  (via " .. S(h) .. ")") or "nil")
+  end
+
+  sub("Which tokens the event accepts")
   -- Token names confirmed from public sources: ExecToken="Flash" in a posted
   -- show-file dump (forum thread 5079) and the lowercase spellings goto / top /
-  -- temp / flash in github.com/mittim88/TCHelper. Go+ and Goto are the ones
-  -- that can carry a cue destination, which is what the importer needs.
+  -- temp / flash in github.com/mittim88/TCHelper.
   local tokens = { "Go+", "Go-", "Goto", "goto", "Top", "Flash", "On", "Off", "Temp", "Swap" }
   for i = 1, #tokens do
-    try(string.format("event:Set('Token', %q)", tokens[i]), function()
+    local ok = try(string.format("event:Set('Token', %q)", tokens[i]), function()
       return event:Set("Token", tokens[i])
     end)
-    local value, how = read_property(event, "Token")
-    kv("  read back Token (" .. S(how) .. ")", value)
+    local back = select(1, read_property(event, "Token"))
+    wf("      -> Token is now %s%s", S(back), ok and "" or "  (the Set itself failed)")
   end
-
-  sub("The cue destination -- the address form and the plain number")
-  local destination = string.format("ShowData.DataPools.Default.Sequences.%d.1", SEQUENCE_NO)
-  for _, property in ipairs({ "CueDestination", "Cue", "CueNumber", "Target", "Destination" }) do
-    try(string.format("event:Set(%q, %q)", property, destination), function()
-      return event:Set(property, destination)
-    end)
-    kv("  read back " .. property, select(1, read_property(event, property)))
-    try(string.format("event:Set(%q, %d)", property, CUE_FIRST), function()
-      return event:Set(property, CUE_FIRST)
-    end)
-    kv("  read back " .. property, select(1, read_property(event, property)))
-  end
-  try("event:Set('Status', 'On')  -- tokens with a status flag need it", function()
-    return event:Set("Status", "On")
-  end)
-
-  sub("The event with everything the probe could set")
-  describe(event, "Event after Set", { pairs = false, children = false, dump = false })
 end
 
-local function section_8_ui(display_handle)
-  section(8, "MessageBox with selectors, states and inputs")
+-- ------------------------------------------------------------- section 8
 
-  if type(MessageBox) ~= "function" then
-    w("  MessageBox is not available")
+-- Can the importer recognise its own events on the next import? It needs a
+-- place for the REAPER marker GUID. This section dumps every level of the tree
+-- and tries to write GUID_MARK into every text-shaped property it can find.
+--
+-- It writes ONLY into objects this probe created. Tobi's own track groups and
+-- events are dumped and read, never written -- a probe that leaves a test
+-- string in a real show is not a probe, it is damage.
+local function section_8_guid_field()
+  section(8, "A free text field for the REAPER GUID")
+  w("  The importer has to be a MERGE, not a replace: it must find the event it")
+  w("  wrote last time. That needs somewhere to park the REAPER marker GUID.")
+  w("  Writing is tried on the probe's OWN objects only; anything that was")
+  w("  already in the show is dumped and read, never written.")
+  wf("  the string written: %s", GUID_MARK)
+
+  if #levels == 0 then
+    w("  no handles were collected in sections 3-5, nothing to test")
     return
   end
 
-  local request = {
-    title = "steelblue probe -- UI test",
-    message = "Pick anything, tick anything, type anything.\n" ..
-              "This box exists only to show what MessageBox hands back.",
-    display = display_handle,
-    commands = {
-      { value = 1, name = "OK" },
-      { value = 2, name = "Cancel" },
-    },
-    selectors = {
-      {
-        name = "Timecode",
-        selectedValue = 1,
-        values = { ["Timecode 1"] = 1, ["Timecode 2"] = 2, ["Timecode 3"] = 3 },
-        type = 0,
-      },
-      {
-        name = "Sequence",
-        selectedValue = 1,
-        values = { ["Sequence 1"] = 1, ["Sequence 2"] = 2, ["Sequence 3"] = 3 },
-        type = 0,
-      },
-    },
-    states = {
-      { name = "Import track A", state = true },
-      { name = "Import track B", state = false },
-      { name = "Import track C", state = true },
-    },
-    inputs = {
-      -- The typed signature spells these whiteFilter/blackFilter, the manual
-      -- page spells them lowercase. Both are sent so the box cannot be wrong.
-      {
-        name = "Offset",
-        value = "0",
-        whiteFilter = "0123456789.:-",
-        whitefilter = "0123456789.:-",
-        maxTextLength = 16,
-      },
-    },
-  }
+  local fixed = { "Note", "Comment", "Text", "Info", "Description", "Tag", "Tags", "Name" }
 
-  sub("What the probe sent")
-  wf("    %d commands, %d selectors, %d states, %d inputs",
-    #request.commands, #request.selectors, #request.states, #request.inputs)
-
-  local ok, result = try("MessageBox(request)", MessageBox, request)
-  if not ok then
-    w("    the call failed -- the table shape above is wrong for this version")
-    return
+  -- One entry per class, and an object the probe owns beats one it does not.
+  local order, best = {}, {}
+  for i = 1, #levels do
+    local entry = levels[i]
+    local class = S(entry.class)
+    if best[class] == nil then
+      order[#order + 1] = class
+      best[class] = entry
+    elseif entry.own and not best[class].own then
+      best[class] = entry
+    end
   end
 
-  sub("What came back")
-  kv("type(result)", type(result))
-  kv("tostring(result)", result)
-  if type(result) == "table" then
-    -- Documented shape: success, result, and inputs/states/selectors keyed by
-    -- the element NAME rather than by position. Both are printed, because the
-    -- importer's overview screen depends on which is true.
-    kv("result.success", result.success)
-    kv("result.result", result.result)
-    kv("result.selectors['Timecode']", result.selectors and result.selectors["Timecode"])
-    kv("result.selectors['Sequence']", result.selectors and result.selectors["Sequence"])
-    kv("result.states['Import track A']", result.states and result.states["Import track A"])
-    kv("result.inputs['Offset']", result.inputs and result.inputs["Offset"])
-    w("    the whole table:")
-  end
-  if type(result) == "table" then
-    local function walk(t, indent, depth)
-      if depth > 4 then
-        wf("%s...", indent)
-        return
+  for i = 1, #order do
+    local entry = best[order[i]]
+    local class = order[i]
+    sub(class .. "  ->  " .. handle_label(entry.handle) .. "   (address " .. S(entry.addr) .. ")")
+    kv("    the probe created this object", entry.own)
+
+    local dump = write_dump(entry.handle, "    ")
+    local candidates = text_property_candidates(dump)
+    wf("    text-shaped writable properties in that dump: %s",
+      #candidates > 0 and table.concat(candidates, ", ") or "(none)")
+
+    if not entry.own then
+      w("    not ours -- read only. The values above are the answer for this level.")
+      for c = 1, #candidates do
+        local property = candidates[c]:sub(1, 1) .. candidates[c]:sub(2):lower()
+        local value, via = read_property(entry.handle, property)
+        wf("      %-16s = %s  (via %s)", property, S(value), S(via))
       end
-      local keys = {}
-      for key in pairs(t) do
-        keys[#keys + 1] = key
-      end
-      table.sort(keys, function(a, b) return S(a) < S(b) end)
-      for i = 1, #keys do
-        local key = keys[i]
-        local value = t[key]
-        if type(value) == "table" then
-          wf("%s%s = {", indent, S(key))
-          walk(value, indent .. "  ", depth + 1)
-          wf("%s}", indent)
-        else
-          wf("%s%-20s = %s  (%s)", indent, S(key), S(value), type(value))
+    else
+      -- The dump spells them upper case; Set() takes the cased name, so both
+      -- the dump spelling and the usual spelling are tried.
+      local tried = {}
+      local function attempt(property)
+        local key = property:lower()
+        if tried[key] then return end
+        tried[key] = true
+        local before = select(1, read_property(entry.handle, property))
+        try(string.format("handle:Set(%q, GUID_MARK)", property), function()
+          return entry.handle:Set(property, GUID_MARK)
+        end)
+        local after, via = read_property(entry.handle, property)
+        wf("      %-16s before=%s  after=%s  (via %s)%s", property, S(before), S(after), S(via),
+          (S(after) == GUID_MARK) and "   <-- IT STUCK" or "")
+        if type(Cmd) == "function" and entry.addr ~= nil and S(after) ~= GUID_MARK then
+          local command = string.format("Set TC %s Property %q %q", S(entry.addr), property, GUID_MARK)
+          created.commands[#created.commands + 1] = command
+          try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
+          local cmd_after = select(1, read_property(entry.handle, property))
+          wf("      %-16s after the Cmd = %s%s", property, S(cmd_after),
+            (S(cmd_after) == GUID_MARK) and "   <-- IT STUCK via Cmd" or "")
+        end
+        -- Put it back. Section 9 deletes these objects anyway, but a property
+        -- left holding a test string is exactly the kind of thing that outlives
+        -- the cleanup it was supposed to be covered by.
+        if before ~= nil then
+          pcall(function() entry.handle:Set(property, before) end)
         end
       end
+
+      for c = 1, #candidates do
+        attempt(candidates[c]:sub(1, 1) .. candidates[c]:sub(2):lower())
+      end
+      for f = 1, #fixed do
+        attempt(fixed[f])
+      end
     end
-    walk(result, "    ", 1)
   end
 
-  sub("Other input helpers, only tested for existence")
-  kv("TextInput", type(TextInput))
-  kv("Confirm", type(Confirm))
-  kv("PopupInput", type(PopupInput))
-  kv("ObjectList", type(ObjectList))
+  sub("If nothing stuck anywhere")
+  w("  Then the importer cannot mark its events in the show file itself and has")
+  w("  to keep a sidecar file in the library folder (GUID -> timecode address).")
+  w("  Section 2 proved that writing such a file is allowed.")
 end
 
-local function section_9_cleanup(root)
+-- ------------------------------------------------------------- section 9
+
+local function section_9_cleanup(timecode)
   section(9, "Cleaning up everything the probe created")
 
-  sub("Cues " .. CUE_FIRST .. "-" .. (CUE_FIRST + CUE_COUNT - 1))
-  if type(Cmd) == "function" then
-    for i = 0, CUE_COUNT - 1 do
-      local command = string.format("Delete Sequence %d Cue %d /NoConfirmation",
-        SEQUENCE_NO, CUE_FIRST + i)
-      try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
-    end
-  end
-
-  sub("The track group the command line created")
-  -- This one goes FIRST, and on purpose. Track groups are a list, so deleting
-  -- the one the object API appended renumbers everything behind it and the
-  -- address below would then point at the wrong group -- or at nothing.
-  if type(Cmd) == "function" and probe_group_no ~= nil then
-    local command = string.format("Delete TC %d.%d /NoConfirmation", TIMECODE_NO, probe_group_no)
-    local ok, answer = try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
-    if not ok or S(answer) ~= "Ok" then
-      command = string.format("Delete Timecode %d.%d /NoConfirmation", TIMECODE_NO, probe_group_no)
-      try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
-    end
-  else
-    w("    section 5 never picked a track group number, nothing to delete")
-  end
-
+  -- Object-API handles first, as ordered: they were appended LAST, so they sit
+  -- behind the command line's track group and removing them cannot renumber it.
   sub("Handles created through the object API, newest first")
-  -- Delete(parent, child_index) and Remove(parent, child_index) both take a
-  -- 1-based index on the PARENT. Deleting the parent removes its children with
-  -- it, so walking newest first means the inner entries are usually gone
-  -- already -- a "not found any more" line here is success, not a failure.
   for i = #created.handles, 1, -1 do
     local entry = created.handles[i]
     wf("    %s", S(entry.note))
-    kv("      Index() of the child", get_quiet(entry.handle, "Index"))
     local position = position_in_parent(entry.parent, entry.handle)
     kv("      position inside the parent (1-based)", position)
     if entry.parent == nil then
@@ -1429,30 +1850,72 @@ local function section_9_cleanup(root)
     end
   end
 
-  sub("What the timecode looks like afterwards")
-  local timecodes = find_pool(root, "Timecodes")
-  if timecodes ~= nil then
-    local timecode = child_by_number(timecodes, TIMECODE_NO)
-    if timecode ~= nil then
-      list_children(timecode, "    ", 20)
+  sub("The track group the command line created")
+  -- Its number is re-resolved by NAME, not trusted: the deletions above may
+  -- have renumbered the list, and deleting the wrong group would take Tobi's
+  -- own work with it.
+  if type(Cmd) == "function" and timecode ~= nil then
+    -- Three ways of finding it, in order of trustworthiness. The HANDLE is
+    -- first: the deletions above may have renumbered the list, and section 8
+    -- writes into the group's Name, so neither the old number nor the name is
+    -- something to bet Tobi's other track groups on.
+    local by_handle = position_in_parent(timecode, probe_group_handle)
+    local by_name = nil
+    local kids = select(1, children_of(timecode))
+    for i = 1, #kids do
+      if S(name_of(kids[i])) == probe_group_name then
+        by_name = i
+      end
+    end
+    kv("    number remembered from section 5", probe_group_no)
+    kv("    position found again by handle", by_handle)
+    kv("    position found again by name", by_name)
+    local position = by_handle or by_name
+    if position == nil then
+      w("    the track group is gone already -- nothing to delete")
+    else
+      local command = string.format("Delete TC %s.%d /NoConfirmation", S(RESOLVED.timecode_no), position)
+      local ok, answer = try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
+      if not ok or not cmd_ok(answer) then
+        command = string.format("Delete Timecode %s.%d /NoConfirmation",
+          S(RESOLVED.timecode_no), position)
+        try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
+      end
+    end
+  else
+    w("    no Cmd or no timecode, nothing to delete")
+  end
+
+  if timecode_was_created_by_probe and type(Cmd) == "function" then
+    sub("The timecode itself, which did not exist before this run")
+    local command = string.format("Delete Timecode %s /NoConfirmation", S(RESOLVED.timecode_no))
+    try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
+  end
+
+  sub("Cues " .. CUE_FIRST .. "-" .. (CUE_FIRST + CUE_COUNT - 1))
+  if type(Cmd) == "function" then
+    for i = 0, CUE_COUNT - 1 do
+      local command = string.format("Delete Sequence %s Cue %d /NoConfirmation",
+        S(RESOLVED.sequence_no), CUE_FIRST + i)
+      try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
     end
   end
 
-  sub("What the sequence looks like afterwards")
-  local sequences = find_pool(root, "Sequences")
-  if sequences ~= nil then
-    local sequence = child_by_number(sequences, SEQUENCE_NO)
-    if sequence ~= nil then
-      local container = index_quiet(sequence, "Cues") or sequence
-      local cues = select(1, children_of(container))
-      wf("    %d cues left", #cues)
-      for i = 1, math.min(#cues, 60) do
-        wf("    cue [%d] no=%s name=%s", i,
-          S(index_quiet(cues[i], "no") or get_quiet(cues[i], "Get", "No")),
-          S(index_quiet(cues[i], "name") or get_quiet(cues[i], "Get", "Name")))
-      end
+  -- The proof, read back out of the current pool.
+  sub("What the timecode holds now")
+  local timecodes = pool_child("Timecodes")
+  if timecodes ~= nil then
+    local tc = child_by_number(timecodes, RESOLVED.timecode_no)
+    if tc ~= nil then
+      list_children(tc, "    ", 20)
+    else
+      w("    the timecode is gone as well")
     end
+  else
+    w("    no Timecodes pool to read")
   end
+
+  cue_list("What the sequence holds now")
 
   sub("Commands this run sent, so anything left over can be undone by hand")
   for i = 1, #created.commands do
@@ -1479,12 +1942,20 @@ local function main(display_handle, argument)
   report_lines = {}
   report_count = 0
   created = { handles = {}, commands = {} }
+  levels = {}
+  probe_group_no = nil
+  probe_group_handle = nil
+  timecode_was_created_by_probe = false
+  RESOLVED.timecode_no = TIMECODE_NO
+  RESOLVED.sequence_no = SEQUENCE_NO
+  POOL.handle, POOL.no, POOL.name = nil, nil, nil
+  POOL.default, POOL.default_no, POOL.same = nil, nil, nil
 
-  raw("steelblue studios -- grandMA3 probe 1")
-  raw("=====================================")
+  raw("steelblue studios -- grandMA3 probe 1b")
+  raw("======================================")
   wf("probe version  %s", PROBE_VERSION)
-  wf("timecode       %d", TIMECODE_NO)
-  wf("sequence       %d", SEQUENCE_NO)
+  wf("timecode       %d (falls back to the first one that exists)", TIMECODE_NO)
+  wf("sequence       %d (falls back to the first one that exists)", SEQUENCE_NO)
   wf("scratch cues   %d-%d", CUE_FIRST, CUE_FIRST + CUE_COUNT - 1)
   wf("display handle %s", S(display_handle))
   wf("argument       %s", S(argument))
@@ -1502,14 +1973,16 @@ local function main(display_handle, argument)
 
   say("steelblue probe: report goes to " .. S(output_path))
 
-  -- The one question the probe does ask, because writing into the wrong show
-  -- would be rude.
+  -- The one question the probe asks. Run 2 removed the second box: what a
+  -- MessageBox with selectors, states and inputs hands back is answered and
+  -- archived, so asking again would only cost Tobi a click.
   if type(MessageBox) == "function" then
     local ok, answer = pcall(MessageBox, {
-      title = "steelblue probe",
+      title = "steelblue probe 1b",
       message = string.format(
-        "The probe runs in timecode %d and sequence %d of THIS show,\n" ..
-        "and it stores cues %d-%d. Use a throwaway show.\n\n" ..
+        "The probe runs in timecode %d and sequence %d of the CURRENT\n" ..
+        "data pool of THIS show, and it stores cues %d-%d.\n" ..
+        "Use a throwaway show.\n\n" ..
         "It writes its findings to:\n%s\n\nOK?",
         TIMECODE_NO, SEQUENCE_NO, CUE_FIRST, CUE_FIRST + CUE_COUNT - 1, S(output_path)),
       display = display_handle,
@@ -1519,10 +1992,9 @@ local function main(display_handle, argument)
       },
     })
     -- The documented return is { success = boolean, result = integer, ... },
-    -- where result is the value of the command that was tapped. Run 1 on
-    -- Tobi's 2.3.0.2 came back with success=true, result=0 after OK -- so a
-    -- 0 must never be read as Cancel. Cancel is value 2 now, and only that
-    -- (or success=false, the box dismissed) stops the probe.
+    -- where result is the value of the command that was tapped. Run 1 came back
+    -- with success=true, result=0 after OK -- so a 0 must never be read as
+    -- Cancel. Cancel is value 2, and only that (or success=false) stops us.
     wf("confirmation   ok=%s answer=%s", S(ok), S(answer))
     if ok and type(answer) == "table" then
       wf("               success=%s result=%s", S(answer.success), S(answer.result))
@@ -1544,8 +2016,6 @@ local function main(display_handle, argument)
     pcall(function() root = Root() end)
   end
 
-  -- Section 1 enumerates every path type, so a second attempt can succeed
-  -- where the early guess came back empty.
   if output_path == nil then
     output_path, library_dir, path_source = pick_output_path()
     if output_path then
@@ -1556,17 +2026,28 @@ local function main(display_handle, argument)
 
   run_section("2", section_2_files, library_dir)
 
+  resolve_pool(root)
+
   local timecode, sequence = nil, nil
   run_section("3", function() timecode, sequence = section_3_object_model(root) end)
 
   local group, track, event = nil, nil, nil
   run_section("4", function() group, track, event = section_4_object_api(timecode, sequence) end)
 
-  run_section("5", section_5_command_line, timecode, sequence)
-  run_section("6", section_6_cues, root, sequence)
-  run_section("7", section_7_time, timecode, event)
-  run_section("8", section_8_ui, display_handle)
-  run_section("9", section_9_cleanup, root)
+  local cmd_event = nil
+  run_section("5", function() cmd_event = section_5_command_line(timecode) end)
+  if timecode == nil then
+    -- Section 5 may have made the command line create one.
+    local timecodes = pool_child("Timecodes")
+    if timecodes ~= nil then
+      timecode = child_by_number(timecodes, RESOLVED.timecode_no)
+    end
+  end
+
+  run_section("6", section_6_cues)
+  run_section("7", section_7_time, timecode, cmd_event or event)
+  run_section("8", section_8_guid_field)
+  run_section("9", section_9_cleanup, timecode)
 
   raw("")
   raw(string.rep("=", 78))
@@ -1579,8 +2060,15 @@ local function main(display_handle, argument)
     say("steelblue probe: done, report written to " .. S(output_path))
   else
     say("steelblue probe: done, but the report could NOT be written -- " .. S(why))
-    say("reason: " .. S(why))
   end
+end
+
+-- The offline harness reads the pure helpers through this hook, the same way
+-- the REAPER plugins expose their internals. MA3 never sets it.
+if type(STEELBLUE_MA3_PROBE_TEST) == "table" then
+  STEELBLUE_MA3_PROBE_TEST.text_property_candidates = text_property_candidates
+  STEELBLUE_MA3_PROBE_TEST.cmd_ok = cmd_ok
+  STEELBLUE_MA3_PROBE_TEST.PROBE_VERSION = PROBE_VERSION
 end
 
 return main
