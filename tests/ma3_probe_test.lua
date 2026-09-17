@@ -30,6 +30,13 @@ local PROBE_FILE = folder .. "grandMA3/probe/steelblue_ma3_probe.lua"
 
 local GUID_MARK = "steelblue:11112222-3333-4444"
 
+-- Every handle that exists before the probe starts has a serial at or below
+-- this. A Set() of the probe's mark on one of those is a write into somebody
+-- else's show -- forbidden even when the probe puts the old value back a
+-- moment later, because a live show is not a place for "a moment later".
+local baseline_serial = math.huge
+local foreign_marks = {}
+
 local fails = 0
 
 local function run(name, fn)
@@ -180,6 +187,9 @@ function METHODS.Set(self, property, value)
   local allowed = WRITABLE[rawget(self, "class")]
   if canon == nil or allowed == nil or not allowed[canon] then
     error("Illegal property: " .. tostring(property), 0)
+  end
+  if value == GUID_MARK and rawget(self, "serial") <= baseline_serial then
+    foreign_marks[#foreign_marks + 1] = tostring(self) .. "." .. canon
   end
   if canon == "Name" then
     rawset(self, "name", value)
@@ -649,6 +659,7 @@ print("grandMA3 probe plugin against a fake console with two data pools:\n")
 -- --------------------------------------------------- scenario A: full run
 
 local world, commands, boxes = make_environment()
+baseline_serial = serial
 _G.STEELBLUE_MA3_PROBE_TEST = {}
 local main = dofile(PROBE_FILE)
 local HOOK = _G.STEELBLUE_MA3_PROBE_TEST
@@ -874,6 +885,13 @@ run("(a) it never writes into an object that was already in the show", function(
     end
   end
   return true, "nothing of the probe's is left in the show"
+end)
+
+run("(a) it never even TRIES to write its mark into a pre-existing object", function()
+  if #foreign_marks > 0 then
+    return false, "Set(GUID_MARK) on " .. table.concat(foreign_marks, ", ")
+  end
+  return true, "no Set of the mark on anything that was there before"
 end)
 
 run("(a) the hand-made event is untouched", function()
