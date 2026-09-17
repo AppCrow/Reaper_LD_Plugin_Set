@@ -526,7 +526,7 @@ end)
 world, commands, boxes = make_environment({
   messagebox = function(_, index)
     if index == 1 then
-      return { success = false, result = 0 }
+      return { success = false, result = 2 }
     end
     return { success = true, result = 1 }
   end,

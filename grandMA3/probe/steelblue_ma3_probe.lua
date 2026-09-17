@@ -1282,7 +1282,7 @@ local function section_8_ui(display_handle)
     display = display_handle,
     commands = {
       { value = 1, name = "OK" },
-      { value = 0, name = "Cancel" },
+      { value = 2, name = "Cancel" },
     },
     selectors = {
       {
@@ -1515,15 +1515,18 @@ local function main(display_handle, argument)
       display = display_handle,
       commands = {
         { value = 1, name = "OK" },
-        { value = 0, name = "Cancel" },
+        { value = 2, name = "Cancel" },
       },
     })
     -- The documented return is { success = boolean, result = integer, ... },
-    -- where result is the value of the command that was tapped.
+    -- where result is the value of the command that was tapped. Run 1 on
+    -- Tobi's 2.3.0.2 came back with success=true, result=0 after OK -- so a
+    -- 0 must never be read as Cancel. Cancel is value 2 now, and only that
+    -- (or success=false, the box dismissed) stops the probe.
     wf("confirmation   ok=%s answer=%s", S(ok), S(answer))
     if ok and type(answer) == "table" then
       wf("               success=%s result=%s", S(answer.success), S(answer.result))
-      if answer.success == false or answer.result == 0 then
+      if answer.success == false or answer.result == 2 then
         raw("")
         raw("Cancelled at the confirmation box -- nothing was created.")
         flush()
