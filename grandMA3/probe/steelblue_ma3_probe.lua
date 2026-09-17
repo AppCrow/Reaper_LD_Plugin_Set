@@ -1485,9 +1485,11 @@ local function section_5_command_line(timecode)
       wf("    %d new children at once -- listing them all", #fresh)
     end
     local entry = fresh[#fresh]
-    wf("    the new event is child number %d (the command asked for something else if")
-    wf("    that number differs from the address above); handle %s", entry.position,
+    wf("    the new event is child number %d, handle %s", entry.position,
       handle_label(entry.handle))
+    w("    (if that number differs from the one the command asked for, then the")
+    w("     console chose it -- and addressing the asked-for number is exactly")
+    w("     what answered \"Illegal object\" in run 2)")
     remember_level("CmdEvent", entry.handle,
       string.format("%s.%d.1.1.1.%d", TC, CG, entry.position), true)
     return entry.handle, entry.position, answer
@@ -1743,7 +1745,12 @@ local function section_8_guid_field()
 
   local fixed = { "Note", "Comment", "Text", "Info", "Description", "Tag", "Tags", "Name" }
 
-  -- One entry per class, and an object the probe owns beats one it does not.
+  -- One entry per class. An object the probe owns beats one it does not, and
+  -- among its own, one with a command-line address beats one without: only
+  -- then can both routes -- handle:Set and Cmd -- be tried on that level.
+  local function score(entry)
+    return (entry.own and 2 or 0) + (entry.addr ~= nil and 1 or 0)
+  end
   local order, best = {}, {}
   for i = 1, #levels do
     local entry = levels[i]
@@ -1751,7 +1758,7 @@ local function section_8_guid_field()
     if best[class] == nil then
       order[#order + 1] = class
       best[class] = entry
-    elseif entry.own and not best[class].own then
+    elseif score(entry) > score(best[class]) then
       best[class] = entry
     end
   end
@@ -1799,9 +1806,14 @@ local function section_8_guid_field()
         end
         -- Put it back. Section 9 deletes these objects anyway, but a property
         -- left holding a test string is exactly the kind of thing that outlives
-        -- the cleanup it was supposed to be covered by.
-        if before ~= nil then
-          pcall(function() entry.handle:Set(property, before) end)
+        -- the cleanup it was supposed to be covered by. A property that read
+        -- back nil is emptied rather than left holding the mark.
+        if S(select(1, read_property(entry.handle, property))) == GUID_MARK then
+          pcall(function() entry.handle:Set(property, before ~= nil and before or "") end)
+          local restored = select(1, read_property(entry.handle, property))
+          if S(restored) == GUID_MARK then
+            wf("      %-16s COULD NOT BE PUT BACK -- it still holds the mark", property)
+          end
         end
       end
 
