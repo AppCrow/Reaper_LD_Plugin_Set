@@ -206,22 +206,27 @@ end
 -- Every property name worth asking a timecode-related object about. Asking
 -- for one that does not exist is harmless (it answers nil), so a generous
 -- list costs nothing and is the point of a probe.
+-- The names in the first block come from a real timecode show-file dump
+-- (forum.malighting.com thread 5079) and the 2.3 timecode settings page; the
+-- rest are plausible spellings that cost one nil each.
 local PROPERTY_CANDIDATES = {
   "Name", "No", "Index", "Class", "Note", "Appearance", "Color",
-  "Time", "TimeCode", "Timecode", "Framerate", "FrameRate", "Rate",
-  "Token", "Target", "Object", "Sequence", "Cue", "CueNumber", "CueDestination",
+  "Duration", "LoopCount", "TCSlot", "AutoStart", "AutoStop", "SwitchOff",
+  "Goto", "Timedisplayformat", "FrameReadout", "Framerate", "FrameRate", "Rate",
+  "Time", "Token", "ExecToken", "Status", "CueDestination", "ValCueDestination",
+  "Target", "Object", "Sequence", "Cue", "CueNumber", "Assignment",
   "Command", "CmdText", "Cmd", "Type", "TrackType", "SubTrackType",
-  "Start", "End", "Duration", "Length", "Offset", "TimeOffset",
-  "Loop", "LoopCount", "Follow", "Enabled", "Active", "Autostart", "AutoStart",
-  "AutoStop", "Speed", "Path", "FileName", "Guid", "UUID",
+  "Play", "Rec", "Start", "End", "Length", "Offset", "TimeOffset",
+  "Loop", "Follow", "Enabled", "Active", "Speed", "Path", "FileName", "Guid",
 }
 
--- Zero-argument methods that MA3 handles are reported to have, plus a few
--- plausible spellings. Whichever answer comes back is the finding.
+-- Zero-argument methods the 2.3 object API documents, plus Acquire, which
+-- public timecode plugins use to create TimeRange and CmdSubTrack children.
 local METHOD_CANDIDATES = {
   "GetClass", "GetChildClass", "Count", "Children", "Addr", "ToAddr",
-  "Parent", "Index", "Dump", "PropertyCount", "GetUIChildrenCount",
-  "GetChildCount", "GetFader", "HasActivePlayback", "IsClass",
+  "Parent", "Index", "Dump", "Get", "Set", "Append", "Acquire", "Insert",
+  "Create", "Delete", "Remove", "Ptr", "IsValid", "IsClass", "IsEmpty",
+  "Export", "Import",
 }
 
 -- Get(handle, property, role): with Enums.Roles.Edit the value comes back as
@@ -234,25 +239,42 @@ pcall(function()
   end
 end)
 
+-- Published plugins read properties as LOWERCASE fields (event.time,
+-- track.target, timecode.framereadout) while Get() takes the cased name.
+-- Both routes are tried, because the importer needs to know which one is real.
+local function read_property(handle, property)
+  local value = get_quiet(handle, "Get", property)
+  if value ~= nil then
+    return value, "Get"
+  end
+  value = index_quiet(handle, property)
+  if value ~= nil then
+    return value, "field"
+  end
+  value = index_quiet(handle, property:lower())
+  if value ~= nil then
+    return value, "lowercase field"
+  end
+  return nil, nil
+end
+
 local function list_properties(handle, indent)
   indent = indent or "    "
   local found = 0
   for i = 1, #PROPERTY_CANDIDATES do
     local property = PROPERTY_CANDIDATES[i]
-    local value = get_quiet(handle, "Get", property)
-    if value == nil then
-      value = index_quiet(handle, property)
-    end
+    local value, how = read_property(handle, property)
     if value ~= nil then
       found = found + 1
+      local label = property .. " [" .. S(how) .. "]"
       local edit = nil
       if EDIT_ROLE ~= nil then
         edit = get_quiet(handle, "Get", property, EDIT_ROLE)
       end
       if edit ~= nil and S(edit) ~= S(value) then
-        wf("%s%-24s = %s  (%s)   [Roles.Edit: %s]", indent, property, S(value), type(value), S(edit))
+        wf("%s%-34s = %s  (%s)   [Roles.Edit: %s]", indent, label, S(value), type(value), S(edit))
       else
-        wf("%s%-24s = %s  (%s)", indent, property, S(value), type(value))
+        wf("%s%-34s = %s  (%s)", indent, label, S(value), type(value))
       end
     end
   end
@@ -721,35 +743,58 @@ local function section_2_files(library_dir)
   end
 end
 
--- Walks Root() down to the timecode pool. Returns the pool handle and the
--- chosen timecode, or nil with the reason written into the report.
+-- Walks Root() down to a pool. Two routes: the long address the conductor
+-- assumed, and DataPool(), which published timecode plugins actually use.
 local function find_pool(root, pool_name)
-  if root == nil then
-    return nil, "Root() gave nothing"
+  local short = nil
+  if type(DataPool) == "function" then
+    pcall(function()
+      local pool = DataPool()
+      if pool ~= nil then
+        short = index_quiet(pool, pool_name)
+      end
+    end)
   end
+  if root == nil then
+    if short ~= nil then
+      return short, "DataPool()." .. pool_name
+    end
+    return nil, "Root() gave nothing and DataPool() did not help"
+  end
+  -- The long route, one step at a time, so a broken link can be named.
+  local long, stopped_at = nil, nil
   local show_data = index_quiet(root, "ShowData")
   if show_data == nil then
     show_data = get_quiet(root, "Get", "ShowData")
   end
   if show_data == nil then
-    return nil, "Root().ShowData is nil"
+    stopped_at = "Root().ShowData is nil"
+  else
+    local data_pools = index_quiet(show_data, "DataPools")
+    if data_pools == nil then
+      stopped_at = "Root().ShowData.DataPools is nil"
+    else
+      local default = index_quiet(data_pools, "Default") or index_quiet(data_pools, 1)
+      if default == nil then
+        stopped_at = "DataPools.Default is nil"
+      else
+        long = index_quiet(default, pool_name)
+        if long == nil then
+          stopped_at = "DataPools.Default." .. pool_name .. " is nil"
+        end
+      end
+    end
   end
-  local data_pools = index_quiet(show_data, "DataPools")
-  if data_pools == nil then
-    return nil, "Root().ShowData.DataPools is nil"
+
+  if long ~= nil then
+    local same = (short ~= nil) and (S(short) == S(long))
+    return long, string.format("Root().ShowData.DataPools.Default.%s (DataPool() route: %s)",
+      pool_name, short == nil and "no handle" or (same and "same handle" or "DIFFERENT handle"))
   end
-  local default = index_quiet(data_pools, "Default")
-  if default == nil then
-    default = index_quiet(data_pools, 1)
+  if short ~= nil then
+    return short, "DataPool()." .. pool_name .. " -- the long route failed: " .. S(stopped_at)
   end
-  if default == nil then
-    return nil, "DataPools.Default is nil"
-  end
-  local pool = index_quiet(default, pool_name)
-  if pool == nil then
-    return nil, "DataPools.Default." .. pool_name .. " is nil"
-  end
-  return pool
+  return nil, S(stopped_at)
 end
 
 -- Finds the child whose number matches. MA3 pool indexes and displayed
@@ -777,7 +822,8 @@ local function section_3_object_model(root)
   section(3, "Object model: timecodes and sequences")
 
   local timecodes, why = find_pool(root, "Timecodes")
-  kv("Timecodes pool", timecodes ~= nil and handle_label(timecodes) or ("nil -- " .. S(why)))
+  kv("Timecodes pool", timecodes ~= nil and handle_label(timecodes) or "nil")
+  kv("  route", why)
   if timecodes == nil then
     sub("Root() itself, so the next run knows where to walk instead")
     describe(root, "Root()", { dump = false, child_limit = 30 })
@@ -857,6 +903,9 @@ end
 -- itself, so the parent has to be remembered alongside the handle.
 local created = { handles = {}, commands = {} }
 
+-- The track group number section 5 stores into, so section 9 can delete it.
+local probe_group_no = nil
+
 local function remember_handle(handle, note, parent)
   if handle ~= nil then
     created.handles[#created.handles + 1] = { handle = handle, note = note, parent = parent }
@@ -896,6 +945,13 @@ local function section_4_object_api(timecode, sequence)
     local ok, value = try(string.format("parent:Append(%q)", S(class)), function()
       return parent:Append(class)
     end)
+    if not ok or value == nil then
+      -- Acquire is what published timecode plugins use for TimeRange and
+      -- CmdSubTrack: "give me the child of that class, make one if needed".
+      ok, value = try(string.format("parent:Acquire(%q)", S(class)), function()
+        return parent:Acquire(class)
+      end)
+    end
     if not ok or value == nil then
       ok, value = try("parent:Append()  -- no class argument", function()
         return parent:Append()
@@ -1003,26 +1059,52 @@ local function section_5_command_line(timecode, sequence)
     try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
   end
 
-  sub("Does Cmd echo anything back at all?")
+  -- The chain below is the one a shipping REAPER->MA3 bridge uses
+  -- (github.com/mittim88/TCHelper). Cmd answers "Ok", "Syntax Error" or
+  -- "Illegal Command", so the return value alone already grades each line.
+  --
+  -- Address shape: Timecode . TrackGroup . Track . TimeRange . SubTrack . Event
+  -- A TimeRange can hold a CmdSubTrack or a FaderSubTrack, which is why the
+  -- sub-track line needs the Type keyword.
+  --
+  -- CG is the track group number the probe works in: one past whatever the
+  -- timecode already has, so no existing group is ever addressed by accident.
+  local CG = 1
+  if timecode ~= nil then
+    CG = (tonumber(select(3, children_of(timecode))) or 0) + 1
+  end
+  probe_group_no = CG
+  kv("track group the probe writes into", CG)
+
+  sub("Does Cmd answer at all?")
   run("Echo \"steelblue probe\"")
 
-  sub("Selecting and inspecting the timecode")
-  run(string.format("Select Timecode %d", TIMECODE_NO))
-  run(string.format("Dump Timecode %d", TIMECODE_NO))
+  sub("Track group and track")
+  run(string.format("Store TC %d.%d \"steelblue probe\"", TIMECODE_NO, CG))
+  run(string.format("Store TC %d.%d.1", TIMECODE_NO, CG))
+  run(string.format("Assign Sequence %d at TC %d.%d.1", SEQUENCE_NO, TIMECODE_NO, CG))
 
-  sub("Creating a track group and a track")
-  run(string.format("Store Timecode %d.1", TIMECODE_NO))
-  run(string.format("Store Timecode %d.1.1", TIMECODE_NO))
-  run(string.format("Assign Sequence %d At Timecode %d.1.1", SEQUENCE_NO, TIMECODE_NO))
+  sub("Time range and command sub-track")
+  run(string.format("Store TC %d.%d.1.1", TIMECODE_NO, CG))
+  run(string.format("Store Type \"CmdSubTrack\" Timecode %d.%d.1.1.1", TIMECODE_NO, CG))
 
-  sub("Creating an event -- three spellings")
-  run(string.format("Store Timecode %d.1.1.1", TIMECODE_NO))
-  run(string.format("Store Timecode %d.1.1.1.1", TIMECODE_NO))
-  run(string.format("Store Timecode %d TrackGroup 1 Track 1 Event 1", TIMECODE_NO))
+  sub("An event, and its three properties")
+  run(string.format("Store TC %d.%d.1.1.1.1", TIMECODE_NO, CG))
+  run(string.format("Set TC %d.%d.1.1.1.1 Property \"time\" 12.437", TIMECODE_NO, CG))
+  run(string.format("Set TC %d.%d.1.1.1.1 Property \"token\" \"goto\"", TIMECODE_NO, CG))
+  run(string.format("Set TC %d.%d.1.1.1.1 Property \"Status\" \"On\"", TIMECODE_NO, CG))
+  run(string.format(
+    "Set TC %d.%d.1.1.1.1 Property \"cuedestination\" \"ShowData.DataPools.Default.Sequences.%d.1\"",
+    TIMECODE_NO, CG, SEQUENCE_NO))
 
-  sub("Labelling what came out")
-  run(string.format("Label Timecode %d.1 \"steelblue probe group\"", TIMECODE_NO))
-  run(string.format("Label Timecode %d.1.1 \"steelblue probe track\"", TIMECODE_NO))
+  sub("A second event, to see whether the numbering is ours to choose")
+  run(string.format("Store TC %d.%d.1.1.1.5", TIMECODE_NO, CG))
+  run(string.format("Set TC %d.%d.1.1.1.5 Property \"time\" 30.5", TIMECODE_NO, CG))
+  run(string.format("Set TC %d.%d.1.1.1.5 Property \"token\" \"Go+\"", TIMECODE_NO, CG))
+
+  sub("Long keyword spellings, in case the short ones are the problem")
+  run(string.format("Store Timecode %d.%d.2", TIMECODE_NO, CG))
+  run(string.format("Label Timecode %d.%d.2 \"steelblue probe track 2\"", TIMECODE_NO, CG))
 
   sub("The timecode after the command line had its turn")
   if timecode ~= nil then
@@ -1078,10 +1160,13 @@ local function section_6_cues(root, sequence)
 
   cue_list("Cues before anything is stored")
 
+  -- The 2.3 Store page spells the option /NoConfirmation; /NoConfirm is the
+  -- abbreviation the command line normally accepts. Both are tried once, and
+  -- the return value says which one this build likes.
   sub("Store an empty cue with an empty programmer")
-  for i = 0, CUE_COUNT - 1 do
-    run(string.format("Store Sequence %d Cue %d /NoConfirm", SEQUENCE_NO, CUE_FIRST + i))
-  end
+  run(string.format("Store Sequence %d Cue %d /NoConfirmation", SEQUENCE_NO, CUE_FIRST))
+  run(string.format("Store Sequence %d Cue %d /NoConfirm", SEQUENCE_NO, CUE_FIRST + 1))
+  run(string.format("Store Sequence %d Cue %d", SEQUENCE_NO, CUE_FIRST + 2))
   cue_list("Cues after the three Store calls")
 
   sub("Label them")
@@ -1091,10 +1176,13 @@ local function section_6_cues(root, sequence)
   end
   cue_list("Cues after labelling")
 
-  sub("Store again over an EXISTING cue -- does it overwrite the name?")
-  run(string.format("Store Sequence %d Cue %d /NoConfirm", SEQUENCE_NO, CUE_FIRST))
-  run(string.format("Store Sequence %d Cue %d /Merge /NoConfirm", SEQUENCE_NO, CUE_FIRST))
-  cue_list("Cues after the second Store -- name of cue " .. CUE_FIRST .. " is the answer")
+  sub("Store again over an EXISTING cue -- is the name lost?")
+  -- This is the one that decides the importer's cue rule: existing cues must
+  -- survive untouched while missing ones are created empty and named.
+  run(string.format("Store Sequence %d Cue %d /NoConfirmation", SEQUENCE_NO, CUE_FIRST))
+  cue_list("After a plain second Store on cue " .. CUE_FIRST)
+  run(string.format("Store Sequence %d Cue %d /Merge /NoConfirmation", SEQUENCE_NO, CUE_FIRST))
+  cue_list("After Store /Merge on cue " .. CUE_FIRST .. " -- its name is the answer")
 end
 
 local function section_7_time(timecode, event)
@@ -1102,10 +1190,14 @@ local function section_7_time(timecode, event)
 
   if timecode ~= nil then
     sub("Framerate of timecode " .. TIMECODE_NO)
-    local names = { "Framerate", "FrameRate", "Rate", "TimeCodeRate", "TCRate", "TimeFormat" }
+    -- The 2.3 timecode settings page calls the property FrameReadout, with
+    -- values Default / Seconds / 24 fps / 25 fps / 30 fps / 60 fps. The others
+    -- are the spellings one would guess, kept so a wrong guess is visible.
+    local names = { "FrameReadout", "Timedisplayformat", "Framerate", "FrameRate",
+                    "Rate", "Duration", "TCSlot" }
     for i = 1, #names do
-      kv("timecode:Get('" .. names[i] .. "')", get_quiet(timecode, "Get", names[i]))
-      kv("timecode." .. names[i], index_quiet(timecode, names[i]))
+      local value, how = read_property(timecode, names[i])
+      kv(names[i] .. " (" .. S(how) .. ")", value)
     end
   end
 
@@ -1116,10 +1208,13 @@ local function section_7_time(timecode, event)
   end
 
   sub("Setting the event time -- number first, then a timecode string")
+  -- A posted show-file dump shows Time="1.04", i.e. seconds as a float, and a
+  -- REAPER bridge writes raw REAPER seconds. Both forms are tried anyway: what
+  -- comes back out is what the importer has to write in.
   local attempts = {
-    { label = "number 12.5", value = 12.5 },
+    { label = "number 12.437", value = 12.437 },
     { label = "integer 12", value = 12 },
-    { label = "string \"12.5\"", value = "12.5" },
+    { label = "string \"12.437\"", value = "12.437" },
     { label = "string \"00:00:12.50\"", value = "00:00:12.50" },
     { label = "string \"00:00:12:15\"", value = "00:00:12:15" },
   }
@@ -1131,24 +1226,40 @@ local function section_7_time(timecode, event)
       try(string.format("event:Set(%q, %s)", property, attempt.label), function()
         return event:Set(property, attempt.value)
       end)
-      kv(string.format("  read back %s", property), get_quiet(event, "Get", property))
+      local value, how = read_property(event, property)
+      wf("      read back %s = %s  (%s, via %s)", property, S(value), type(value), S(how))
     end
   end
 
   sub("Setting the token and the target cue")
-  local tokens = { "Go+", "Go-", "Goto", "Top", "Flash", "On", "Off", "Pause", "Toggle" }
+  -- Token names confirmed from public sources: ExecToken="Flash" in a posted
+  -- show-file dump (forum thread 5079) and the lowercase spellings goto / top /
+  -- temp / flash in github.com/mittim88/TCHelper. Go+ and Goto are the ones
+  -- that can carry a cue destination, which is what the importer needs.
+  local tokens = { "Go+", "Go-", "Goto", "goto", "Top", "Flash", "On", "Off", "Temp", "Swap" }
   for i = 1, #tokens do
     try(string.format("event:Set('Token', %q)", tokens[i]), function()
       return event:Set("Token", tokens[i])
     end)
-    kv("  read back Token", get_quiet(event, "Get", "Token"))
+    local value, how = read_property(event, "Token")
+    kv("  read back Token (" .. S(how) .. ")", value)
   end
-  for _, property in ipairs({ "Cue", "CueNumber", "Target", "Object", "Destination" }) do
+
+  sub("The cue destination -- the address form and the plain number")
+  local destination = string.format("ShowData.DataPools.Default.Sequences.%d.1", SEQUENCE_NO)
+  for _, property in ipairs({ "CueDestination", "Cue", "CueNumber", "Target", "Destination" }) do
+    try(string.format("event:Set(%q, %q)", property, destination), function()
+      return event:Set(property, destination)
+    end)
+    kv("  read back " .. property, select(1, read_property(event, property)))
     try(string.format("event:Set(%q, %d)", property, CUE_FIRST), function()
       return event:Set(property, CUE_FIRST)
     end)
-    kv("  read back " .. property, get_quiet(event, "Get", property))
+    kv("  read back " .. property, select(1, read_property(event, property)))
   end
+  try("event:Set('Status', 'On')  -- tokens with a status flag need it", function()
+    return event:Set("Status", "On")
+  end)
 
   sub("The event with everything the probe could set")
   describe(event, "Event after Set", { pairs = false, children = false, dump = false })
@@ -1267,9 +1378,25 @@ local function section_9_cleanup(root)
   sub("Cues " .. CUE_FIRST .. "-" .. (CUE_FIRST + CUE_COUNT - 1))
   if type(Cmd) == "function" then
     for i = 0, CUE_COUNT - 1 do
-      try(string.format("Cmd(\"Delete Sequence %d Cue %d /NoConfirm\")", SEQUENCE_NO, CUE_FIRST + i),
-        Cmd, string.format("Delete Sequence %d Cue %d /NoConfirm", SEQUENCE_NO, CUE_FIRST + i))
+      local command = string.format("Delete Sequence %d Cue %d /NoConfirmation",
+        SEQUENCE_NO, CUE_FIRST + i)
+      try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
     end
+  end
+
+  sub("The track group the command line created")
+  -- This one goes FIRST, and on purpose. Track groups are a list, so deleting
+  -- the one the object API appended renumbers everything behind it and the
+  -- address below would then point at the wrong group -- or at nothing.
+  if type(Cmd) == "function" and probe_group_no ~= nil then
+    local command = string.format("Delete TC %d.%d /NoConfirmation", TIMECODE_NO, probe_group_no)
+    local ok, answer = try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
+    if not ok or S(answer) ~= "Ok" then
+      command = string.format("Delete Timecode %d.%d /NoConfirmation", TIMECODE_NO, probe_group_no)
+      try("Cmd(" .. string.format("%q", command) .. ")", Cmd, command)
+    end
+  else
+    w("    section 5 never picked a track group number, nothing to delete")
   end
 
   sub("Handles created through the object API, newest first")
@@ -1298,12 +1425,6 @@ local function section_9_cleanup(root)
       end
       kv("      still a child?", position_in_parent(entry.parent, entry.handle) ~= nil)
     end
-  end
-
-  sub("Track groups the command line may have left behind")
-  if type(Cmd) == "function" then
-    try(string.format("Cmd(\"Delete Timecode %d.1 /NoConfirm\")", TIMECODE_NO),
-      Cmd, string.format("Delete Timecode %d.1 /NoConfirm", TIMECODE_NO))
   end
 
   sub("What the timecode looks like afterwards")

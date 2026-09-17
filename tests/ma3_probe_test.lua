@@ -248,7 +248,34 @@ local function make_cmd(world, log)
       return "Ok"
     end
 
-    if command:match("^Echo") or command:match("^Select") or command:match("^Dump") then
+    -- Track groups: "Store TC 1.3" makes group 3, "Delete TC 1.3" takes it
+    -- away again. Enough for section 5 to build something and section 9 to
+    -- have something real to clear up.
+    local store_group = command:match("^Store TC %d+%.(%d+)")
+      or command:match("^Store Timecode %d+%.(%d+)")
+    if store_group then
+      local kids = rawget(world.timecode, "kids")
+      local wanted = tonumber(store_group)
+      while #kids < wanted do
+        add_child(world.timecode, new_handle("TrackGroup", "", { no = #kids + 1 }))
+      end
+      return "Ok"
+    end
+
+    local delete_group = command:match("^Delete TC %d+%.(%d+)")
+      or command:match("^Delete Timecode %d+%.(%d+)")
+    if delete_group then
+      local kids = rawget(world.timecode, "kids")
+      local wanted = tonumber(delete_group)
+      if kids[wanted] ~= nil then
+        table.remove(kids, wanted)
+        return "Ok"
+      end
+      return "Illegal Command"
+    end
+
+    if command:match("^Echo") or command:match("^Select") or command:match("^Dump")
+       or command:match("^Set TC") or command:match("^Assign ") then
       return "Ok"
     end
     return "Illegal Command"
@@ -422,19 +449,52 @@ run("(a) the example data file was written and read back", function()
   return true, "framerate + tracks read"
 end)
 
-run("(a) the three scratch cues were stored", function()
-  local wanted = "Store Sequence 1 Cue 990 /NoConfirm"
+local function sent(pattern)
   for _, command in ipairs(commands) do
-    if command == wanted then return true, wanted end
+    if command:find(pattern) then
+      return command
+    end
   end
-  return false, "never sent"
+  return nil
+end
+
+run("(a) the three scratch cues were stored", function()
+  local hits = 0
+  for i = 990, 992 do
+    if sent("^Store Sequence 1 Cue " .. i) then hits = hits + 1 end
+  end
+  return hits == 3, hits .. " of 3"
+end)
+
+run("(a) it built a whole event chain on the command line", function()
+  local wanted = {
+    "^Store TC 1%.%d+%.1$",                      -- track
+    "^Assign Sequence 1 at TC 1%.",              -- track target
+    '^Store Type "CmdSubTrack" Timecode 1%.',    -- sub-track
+    '^Set TC 1%..*Property "time" 12%.437$',     -- event time in seconds
+    '^Set TC 1%..*Property "token" "goto"$',     -- event token
+  }
+  for _, pattern in ipairs(wanted) do
+    if not sent(pattern) then
+      return false, "missing: " .. pattern
+    end
+  end
+  return true, #wanted .. " lines"
+end)
+
+run("(a) it wrote into a track group of its own, not an existing one", function()
+  local command = sent("^Store TC 1%.(%d+) \"steelblue probe\"")
+  if not command then return false, "no track group was stored" end
+  local group = tonumber(command:match("^Store TC 1%.(%d+)"))
+  return group ~= nil and group > 1, "group " .. tostring(group)
 end)
 
 run("(a) cleanup removed cues 990-992 again", function()
   return count_cues(world) == 2, cue_numbers(world)
 end)
 
-run("(a) cleanup removed the track group it appended", function()
+run("(a) cleanup removed both track groups it made", function()
+  -- One came from Append() in section 4, one from Store TC in section 5.
   local kids = rawget(world.timecode, "kids")
   return #kids == 1, #kids .. " track group(s) left"
 end)
@@ -488,9 +548,17 @@ run("(b) nothing was created: no command was sent", function()
   return #commands == 0, #commands .. " command(s)"
 end)
 
-run("(b) nothing was created: the timecode is untouched", function()
-  return #rawget(world.timecode, "kids") == 1 and count_cues(world) == 2,
-    #rawget(world.timecode, "kids") .. " groups, " .. count_cues(world) .. " cues"
+-- Checking the timecode afterwards would prove nothing here: cleanup puts it
+-- back either way, so that assertion could not fail. What can only be true
+-- when the cancel really took hold is that no section ran at all.
+run("(b) it stopped before section 1 -- no sections in the report", function()
+  if not report then return false, "no report" end
+  local stopped = report:find("SECTION 1", 1, true) == nil
+  return stopped, stopped and "report holds nothing but the header" or "sections ran anyway"
+end)
+
+run("(b) the second message box never appeared", function()
+  return #boxes == 1, #boxes .. " box(es)"
 end)
 
 -- ----------------------------- scenario C: a console that answers almost nothing
