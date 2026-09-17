@@ -1,4 +1,4 @@
-# steelblue Probe 1 für grandMA3
+# steelblue Probe 1b für grandMA3
 
 Ein kleines Test-Plugin für die MA3. Es baut noch nichts ein — es schaut nur
 nach, wie die MA3 innen aufgebaut ist, und schreibt alles in eine Textdatei.
@@ -10,11 +10,28 @@ am Ende wieder — aber eine echte Show ist dafür trotzdem der falsche Ort.
 
 ---
 
+## Was beim letzten Lauf schief ging (und jetzt anders ist)
+
+Beim letzten Mal hat die Probe im **falschen Datenpool** nachgesehen. Deine Show
+arbeitet in **DataPool 2**, die Probe hat aber immer in DataPool 1 geschaut —
+und der ist leer. Deshalb hat sie den Timecode nicht gefunden, zwei Kapitel sind
+ausgefallen, und in der Cue-Liste stand nichts.
+
+Diese Version nimmt **immer den Pool, in dem du gerade arbeitest**. Sonst ändert
+sich für dich nichts — außer: die **zweite Box** mit den Auswahlfeldern und
+Häkchen ist weg. Die Frage ist beantwortet, du musst nur noch einmal **OK**
+tippen.
+
+---
+
 ## Was das Plugin anfasst
 
-- **Timecode 1** und **Sequence 1** der geöffneten Show.
+- **Timecode 1** und **Sequence 1** — im Datenpool, in dem du gerade arbeitest.
+  Gibt es dort keinen Timecode 1, nimmt die Probe den ersten, den es gibt, und
+  schreibt in den Bericht, welchen.
 - **Cues 990, 991, 992** dieser Sequence.
 - Es legt eine Track-Gruppe an und **löscht am Ende alles wieder**.
+- Was schon in der Show ist, wird nur **angeschaut**, nie verändert.
 
 Wenn deine Wegwerf-Show andere Nummern hat: siehe unten, „Andere Nummern".
 
@@ -61,13 +78,11 @@ Im Pool steht jetzt ein Plugin namens **steelblue_probe**.
 
 1. Die **Wegwerf-Show** öffnen (falls noch nicht offen).
 2. Im Plugin Pool auf **steelblue_probe** tippen.
-3. Es kommt eine Box: *„The probe runs in timecode 1 and sequence 1 of THIS
-   show…"* — mit **OK** bestätigen.
+3. Es kommt **eine** Box: *„The probe runs in timecode 1 and sequence 1 of the
+   CURRENT data pool…"* — mit **OK** bestätigen.
    (Mit **Cancel** passiert gar nichts, falls du die falsche Show offen hast.)
-4. Es kommt eine **zweite** Box mit zwei Auswahlfeldern, drei Häkchen und einem
-   Textfeld. Die ist Absicht — sie testet die Bedienoberfläche. Stell ein, was
-   du willst, und tippe auf **OK**.
-5. Warten, bis nichts mehr passiert (ein paar Sekunden).
+4. Warten, bis nichts mehr passiert (ein paar Sekunden). Eine zweite Box kommt
+   diesmal nicht.
 
 ---
 
@@ -99,8 +114,10 @@ Die Datei `steelblue_ma3_probe.xml` in einem Texteditor öffnen. In Zeile
 die Nummer auf deine MA3-Version ändern:
 
 ```
-<GMA3 DataVersion="2.3.0.2">
+<GMA3 DataVersion="2.3.2.0">
 ```
+
+(2.3.2.0 ist die Version, die deine MA3 beim letzten Lauf gemeldet hat.)
 
 Speichern, in der MA3 noch einmal importieren.
 
@@ -115,9 +132,12 @@ Screenshot davon schicken — das ist auch ein Ergebnis.
 
 ## Andere Nummern
 
-Wenn deine Wegwerf-Show keinen Timecode 1 oder keine Sequence 1 hat:
-`steelblue_ma3_probe.lua` in einem Texteditor öffnen. Ganz oben stehen vier
-Zeilen:
+Du musst hier nichts tun: Gibt es keinen Timecode 1 oder keine Sequence 1,
+nimmt die Probe von selbst die erste, die es gibt, und schreibt in den Bericht,
+welche das war.
+
+Wenn du trotzdem bestimmte Nummern willst: `steelblue_ma3_probe.lua` in einem
+Texteditor öffnen. Ganz oben stehen vier Zeilen:
 
 ```lua
 local TIMECODE_NO = 1   -- the EXISTING timecode the probe writes into
@@ -146,6 +166,16 @@ local EXTERNAL_FILE = "/Users/tobiaspehla/Desktop/test.txt"
 Dann prüft die Probe zusätzlich, ob die MA3 Dateien von außerhalb ihrer eigenen
 Ordner lesen darf. Das ist für den späteren Importer interessant, aber nicht
 nötig — leer lassen ist auch in Ordnung.
+
+---
+
+## Wenn du zwei Minuten übrig hast
+
+Am wertvollsten wäre **ein Event, das du selbst von Hand** in Timecode 1
+angelegt hast — irgendeins, das auf einen Cue zeigt. Die Probe schreibt dann in
+den Bericht, wie die MA3 dieses Event intern speichert, und daran sieht man, wie
+der Importer seine Events schreiben muss. Wenn schon eins drin ist: einfach
+drin lassen. Die Probe fasst es nicht an.
 
 ---
 
