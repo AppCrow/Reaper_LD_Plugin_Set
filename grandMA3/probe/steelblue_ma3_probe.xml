@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Plugin wrapper for the grandMA3 Plugin Pool import.
+
+  The shape is copied from two published, working plugins:
+    https://github.com/patopesto/GrandMA3-Plugins/blob/master/PluginTemplate/PluginTemplate.xml
+    https://github.com/patopesto/GrandMA3-Plugins/blob/master/TimecodeExporter/TimecodeExporter.xml
+  The element is <UserPlugin>, not <Plugin>; <Plugin> is the pre-2.x spelling.
+
+  "Path" is the sub-folder inside .../gma3_library/datapools/plugins that holds
+  the Lua file, and "FileName" is relative to it. So the two files belong here:
+    .../gma3_library/datapools/plugins/steelblue_probe/steelblue_ma3_probe.xml
+    .../gma3_library/datapools/plugins/steelblue_probe/steelblue_ma3_probe.lua
+  See README.md next to this file.
+
+  DataVersion is the one both reference plugins ship with and that imports on
+  2.x consoles. If this console refuses the file, "2.3.0.2" is the fallback --
+  see README.md.
+-->
+<GMA3 DataVersion="2.0.2.0">
+  <UserPlugin Name="steelblue_probe" Author="steelblue studios" Version="1.0.0.0" Path="steelblue_probe">
+    <ComponentLua Name="steelblue_ma3_probe" FileName="steelblue_ma3_probe.lua"/>
+  </UserPlugin>
+</GMA3>
