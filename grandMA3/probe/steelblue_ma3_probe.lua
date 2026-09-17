@@ -247,12 +247,14 @@ local function read_property(handle, property)
   if value ~= nil then
     return value, "Get"
   end
+  -- A field lookup can land on a METHOD of the same name -- Index, Count and
+  -- Parent are all methods -- so anything callable is not the property.
   value = index_quiet(handle, property)
-  if value ~= nil then
+  if value ~= nil and type(value) ~= "function" then
     return value, "field"
   end
   value = index_quiet(handle, property:lower())
-  if value ~= nil then
+  if value ~= nil and type(value) ~= "function" then
     return value, "lowercase field"
   end
   return nil, nil
