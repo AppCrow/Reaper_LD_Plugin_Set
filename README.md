@@ -130,6 +130,28 @@ The tests run in plain Lua, no REAPER required — they build fake `reaper` tabl
 for t in tests/*_test.lua; do lua "$t"; done
 ```
 
+## Neutral build (LD Tools)
+
+The same plugins without the steelblue studios branding, for passing on to people who should not get our name with them. The product is called "LD Tools", and the window header shows that word without the logo.
+
+```sh
+./build-package.sh all --neutral   # dist/LD-Tools-macOS.dmg and dist/LD-Tools-Windows.zip
+./build-package.sh mac --neutral   # just the .dmg
+./build-package.sh win --neutral   # just the .zip
+```
+
+There is no second copy of the code. The build stages the normal package and then rewrites the staged copy: `steelblue_*.lua` become `ld_*.lua` (the installer is `ld_install.lua`), the theme's one `SB.BRAND` line is swapped, and the brand words are replaced in every text file. A gate then stops the build if "steelblue" survives anywhere, in a file or a file name and in any case, or if a `.lua` no longer compiles. `tests/neutral_build_test.lua` stages the payload, checks it, and runs eight suites against the debranded copy.
+
+Left out, and why:
+
+- `Tutorials/mark.svg`: it is the logo.
+- `Tutorials/video/`: the video shows the branded windows.
+- The PDF guides are rendered again from the debranded HTML when Google Chrome is installed. Without Chrome they are left out, not shipped branded.
+
+Kept although it shows the brand: the screenshots in `Tutorials/img/` show the branded window header. They are pixels, and reshooting them is a separate job.
+
+Both builds can be installed side by side. The neutral one installs into `Scripts/ld-tools/`, registers its workspace as "LD Tools", and keeps its settings in `ld_*` ExtState sections, so neither build touches the other's files or settings. Each writes its own autostart block into `Scripts/__startup.eel`, so with both installed and autostart left on, both workspaces open at every REAPER start. The four single plugins have the same names in both builds, so the Action List shows each of them twice; only the path tells them apart.
+
 ## License
 
 steelblue studios code is [MIT](LICENSE). The two bundled extensions keep their own licenses (ReaImGui: LGPL-3.0, js_ReaScriptAPI: MIT) — see [`extensions/NOTICE.txt`](extensions/NOTICE.txt).

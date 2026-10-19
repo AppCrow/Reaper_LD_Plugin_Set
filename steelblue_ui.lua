@@ -23,6 +23,12 @@ SB.VERSION = "1.0"
 SB.BRAND_BLUE = 0x4682B4
 SB.BRAND_GREY = 0x666666
 
+-- What the two header bands write next to the mark, and whether the mark is
+-- drawn at all. build-package.sh REWRITES THE NEXT LINE for the neutral
+-- "LD Tools" package (an anchored substitution on "^SB.BRAND = ", which must
+-- match exactly once) -- keep it on one line and do not reformat it.
+SB.BRAND = { word = "steelblue", sub = "STUDIOS", sub_bar = "LD TOOLS", mark = true }
+
 -- ImGui wants 0xRRGGBBAA.
 local C = {
   blue         = 0x4682B4FF,
@@ -347,14 +353,21 @@ function SB.header(ctx, _title)
     reaper.ImGui_DrawList_AddRectFilled(dl, x - pad, band_top, x + width + pad, y + height, C.header_bg)
     reaper.ImGui_DrawList_AddRectFilled(dl, x - pad, band_bottom, x + width + pad, y + height, C.blue)
 
+    local brand = SB.BRAND
     local mark_h = 20
-    local mark_w = SB.logo_mark(ctx, x, band_mid - (mark_h / 2), mark_h) or 22
+    local text_x = x
+    if brand.mark ~= false then
+      local mark_w = SB.logo_mark(ctx, x, band_mid - (mark_h / 2), mark_h) or 22
+      text_x = x + mark_w + 10
+    end
 
     local sub = 9
     local text_h = SB.size.body + sub
     local text_top = band_mid - (text_h / 2)
-    SB.draw_text(ctx, dl, x + mark_w + 10, text_top, C.text, "steelblue", SB.size.body)
-    SB.draw_text(ctx, dl, x + mark_w + 10, text_top + SB.size.body, C.text_muted, "STUDIOS", sub)
+    SB.draw_text(ctx, dl, text_x, text_top, C.text, brand.word, SB.size.body)
+    if brand.sub and brand.sub ~= "" then
+      SB.draw_text(ctx, dl, text_x, text_top + SB.size.body, C.text_muted, brand.sub, sub)
+    end
   end
 
   reaper.ImGui_Dummy(ctx, 1, height - 6)
@@ -593,21 +606,30 @@ function SB.header_bar(ctx, opts)
   local band_bottom = y + height - rule
   local band_mid = (band_top + band_bottom) / 2
 
+  local brand = SB.BRAND
   local mark_h = 22
   local mark_w = mark_h * MARK_RATIO
   local gap = 10
+  if brand.mark == false then
+    -- No mark: the wordmark starts at x, and nothing is reserved for a gap.
+    mark_w, gap = 0, 0
+  end
 
   if dl then
     reaper.ImGui_DrawList_AddRectFilled(dl, x - pad, band_top, x + width + pad, y + height, C.header_bg)
     reaper.ImGui_DrawList_AddRectFilled(dl, x - pad, band_bottom, x + width + pad, y + height, C.blue)
 
-    SB.logo_mark(ctx, x, band_mid - (mark_h / 2), mark_h)
+    if brand.mark ~= false then
+      SB.logo_mark(ctx, x, band_mid - (mark_h / 2), mark_h)
+    end
 
     local sub = 9
     local text_h = SB.size.body + sub
     local text_top = band_mid - (text_h / 2)
-    SB.draw_text(ctx, dl, x + mark_w + gap, text_top, C.text, "steelblue", SB.size.body)
-    SB.draw_text(ctx, dl, x + mark_w + gap, text_top + SB.size.body, C.text_muted, "LD TOOLS", sub)
+    SB.draw_text(ctx, dl, x + mark_w + gap, text_top, C.text, brand.word, SB.size.body)
+    if brand.sub_bar and brand.sub_bar ~= "" then
+      SB.draw_text(ctx, dl, x + mark_w + gap, text_top + SB.size.body, C.text_muted, brand.sub_bar, sub)
+    end
   end
 
   -- Centre one row of ordinary items on the band instead of nudging them by
@@ -622,7 +644,7 @@ function SB.header_bar(ctx, opts)
   local row_y = ly + math.max(0, ((height - rule) - frame_h) / 2)
 
   if opts.left then
-    local wordmark = text_width(ctx, "steelblue") or 60
+    local wordmark = text_width(ctx, brand.word) or 60
     reaper.ImGui_SetCursorPos(ctx, lx + mark_w + gap + wordmark + 24, row_y)
     opts.left(ctx)
   end
