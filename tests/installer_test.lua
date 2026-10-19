@@ -10,6 +10,17 @@
 local PKG = ((arg[0]:match("(.*/)") or "./").."../")..""
 local REAPER_BIN = "/Applications/REAPER.app/Contents/MacOS/REAPER"
 
+-- Where the installer puts the plugins: read from the installer itself, not
+-- written down here a second time. The neutral build (build-package.sh
+-- --neutral) changes it to "ld-tools", and its copy of this suite has to
+-- follow -- a literal here would test the wrong folder or fail for nothing.
+local INSTALL_SUBFOLDER
+for line in io.lines(PKG .. "steelblue_install.lua") do
+  INSTALL_SUBFOLDER = INSTALL_SUBFOLDER or line:match('^local INSTALL_SUBFOLDER = "([^"]+)"')
+end
+assert(INSTALL_SUBFOLDER, "no INSTALL_SUBFOLDER line in steelblue_install.lua")
+local SCRIPTS_DIR = "/Scripts/" .. INSTALL_SUBFOLDER .. "/"
+
 -- ---------------------------------------------------------------- 1. names
 
 local used = {}
@@ -203,7 +214,7 @@ local function run(name, setup, check)
   -- Files already sitting in the install folder when the installer starts --
   -- an older release's leftovers, or something the user put there.
   if setup.already_there then
-    local dir = scenario.resource_path .. "/Scripts/steelblue/"
+    local dir = scenario.resource_path .. SCRIPTS_DIR
     os.execute(string.format("mkdir -p %q", dir))
     for _, file in ipairs(setup.already_there) do
       local h = io.open(dir .. file, "wb")
@@ -314,7 +325,7 @@ end))
 check(run("files land in REAPER's Scripts folder", {
   imgui = true, js = true, answers = { 1, 7 },
 }, function(log)
-  local dir = scenario.resource_path .. "/Scripts/steelblue/"
+  local dir = scenario.resource_path .. SCRIPTS_DIR
   local want = {
     "Live BPM Analyzer.lua", "MIDI notes to project markers.lua",
     "Rename selected markers.lua", "CopyMarkers.lua",
@@ -333,7 +344,7 @@ check(run("files land in REAPER's Scripts folder", {
   end
   -- and the actions must reference the copies, not the disk image
   for _, e in ipairs(log) do
-    if e.kind == "register" and not e.path:find("/Scripts/steelblue/", 1, true) then
+    if e.kind == "register" and not e.path:find(SCRIPTS_DIR, 1, true) then
       return false, "registered from outside the install dir: " .. e.path
     end
   end
@@ -348,7 +359,7 @@ check(run("stale .lua files in the install folder are removed and named", {
   imgui = true, js = true, answers = { 1, 7 },
   already_there = { "old_thing.lua", "notes.txt", "steelblue_ui.lua" },
 }, function(log)
-  local dir = scenario.resource_path .. "/Scripts/steelblue/"
+  local dir = scenario.resource_path .. SCRIPTS_DIR
   local gone = removed_files(log)
 
   if #gone ~= 1 or gone[1] ~= "old_thing.lua" then
