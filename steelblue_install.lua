@@ -89,6 +89,10 @@ local SEP = package.config:sub(1, 1)
 -- Anything else (someone dragging the single .lua out somewhere) has no payload
 -- and must be told, not left to fail on the first missing file.
 local PAYLOAD_SUBFOLDER = "steelblue Plugin Set"
+-- The folder under REAPER's Scripts/ the plugins are installed into. A
+-- constant, like the one above, because the neutral LD Tools build
+-- (build-package.sh --neutral) rewrites both.
+local INSTALL_SUBFOLDER = "steelblue"
 
 local folder = (function()
   for _, dir in ipairs({ script_dir, script_dir .. PAYLOAD_SUBFOLDER .. SEP }) do
@@ -109,7 +113,7 @@ local ID_OK, ID_YES = 1, 6
 -- where they happen to sit right now is how you end up with REAPER launching a
 -- file off someone's Desktop months later.
 local function install_dir()
-  return reaper.GetResourcePath() .. SEP .. "Scripts" .. SEP .. "steelblue" .. SEP
+  return reaper.GetResourcePath() .. SEP .. "Scripts" .. SEP .. INSTALL_SUBFOLDER .. SEP
 end
 
 local function copy_file(from, to)
