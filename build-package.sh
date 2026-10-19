@@ -201,7 +201,7 @@ selection gets cleared as well.
 
 
 WHAT IS IN THE $(echo "$wrapper" | tr '[:lower:]' '[:upper:]')
----------------------$(echo "$wrapper" | sed 's/./-/g')
+---------------$(echo "$wrapper" | sed 's/./-/g')
 
    $(printf '%-24s' "$installer")the installer — start here
    Tutorials/              one guide per plugin, open index.html
@@ -224,6 +224,8 @@ debrand() {
   # first: once "steelblue_" or the bare word has been replaced, the longer
   # phrases could no longer be found.
   local -a MAP=(
+    "steelblue LD Tools — steelblue studios" "LD Tools"
+    "steelblue studios — steelblue LD Tools" "LD Tools"
     "the steelblue LD Plugin Set"            "LD Tools"
     "steelblue LD Tools"                     "LD Tools"
     "steelblue LD Plugin Set"                "LD Tools"
