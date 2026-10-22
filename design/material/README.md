@@ -18,7 +18,7 @@ ist **vorläufig**, bis Tobi es freigibt. Der Ordner `design/` wird von
 | `ld-tools-neutral-en-1-rename.png` | **Neutral** (LD Tools, gedockt im REAPER-Fenster): Tab „Rename selected markers“, 4 Marker, Vorschau `Kick(1)[Top]^Kick^` | Tobis Aufnahme 22.10.2026, umgebaut |
 | `ld-tools-neutral-en-2-rename-result.png` | Neutral: dasselbe nach dem Umbenennen, Marker 1–4 heißen `Kick(1)[Top]^Kick^` | dito |
 | `ld-tools-neutral-en-3-copy.png` | Neutral: Tab „Copy Markers“ nach dem Kopieren, Cursor bei 225.1.00, Liste mit 5 Markern, 4 gewählt | dito |
-| `ld-tools-neutral-en-4-midi.png` | Neutral: Tab „MIDI notes to markers“ mit Meldung „47 markers created in 1 lanes“, Lane „Kick“ im Lineal. Macke: während der Meldung steht „OFFLINE“ über dem Audio-Item | dito, Ersatzaufnahme offen (TT 140) |
+| `ld-tools-neutral-en-4-midi.png` | Neutral: Tab „MIDI notes to markers“ mit Meldung „47 markers created in 1 lanes“, Lane „Kick“ im Lineal. Macke: während der Meldung steht „OFFLINE“ über dem Audio-Item | dito, bleibt so (Tobi, 22.10.2026) |
 | `src-neutral/ld-tools-{1-rename,2-rename-result,3-copy,4-midi}.png` | Die vier Originale, 3024 px breit, mit Alpha | Quelle |
 | `FUNKTIONSLISTE.md` | Funktionen mit Datei/Funktion-Beleg und exakten UI-Wörtern | fertig für v2.0.0 |
 
@@ -49,9 +49,9 @@ Tobi hat aus fünf Entwürfen (A–E) E gewählt; die anderen sind verworfen.
 - Die `ld-plugin-set-*`-Bilder zeigen das **steelblue**-Branding, die
   `ld-tools-neutral-*`-Bilder die neutrale Fassung „LD Tools“ (Tobis Aufnahmen
   vom 22.10.2026 in `src-neutral/`, Workspace unten im REAPER-Fenster gedockt,
-  derselbe ffmpeg-Umbau). Neutral fehlen ein reines BPM-Motiv (der BPM-Block
-  sitzt in jedem Kopf, 113.77 BPM) und ein MIDI-Bild ohne Meldungsbox und ohne
-  „OFFLINE“ (TT 140). Welche Reihe auf die Seite kommt, entscheidet TT 139.1.
+  derselbe ffmpeg-Umbau). Neutral gibt es kein reines BPM-Motiv (der BPM-Block
+  sitzt in jedem Kopf, 113.77 BPM), und das MIDI-Bild zeigt die Meldungsbox und
+  „OFFLINE“; beides bleibt so (Tobi, 22.10.2026). Welche Reihe auf die Seite kommt, entscheidet TT 139.1.
 - Der Dateiname-Slug `ld-plugin-set` ist ein Platzhalter, bis Tobi die
   Subdomain festlegt. Umbenennen ist dann ein `mv`.
 
