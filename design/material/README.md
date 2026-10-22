@@ -51,9 +51,12 @@ Tobi hat aus fünf Entwürfen (A–E) E gewählt; die anderen sind verworfen.
   vom 22.10.2026 in `src-neutral/`, Workspace unten im REAPER-Fenster gedockt,
   derselbe ffmpeg-Umbau). Neutral gibt es kein reines BPM-Motiv (der BPM-Block
   sitzt in jedem Kopf, 113.77 BPM), und das MIDI-Bild zeigt die Meldungsbox und
-  „OFFLINE“; beides bleibt so (Tobi, 22.10.2026). Welche Reihe auf die Seite kommt, entscheidet TT 139.1.
-- Der Dateiname-Slug `ld-plugin-set` ist ein Platzhalter, bis Tobi die
-  Subdomain festlegt. Umbenennen ist dann ein `mv`.
+  „OFFLINE“; beides bleibt so (Tobi, 22.10.2026). Auf die Seite kommt die neutrale Reihe (Website-TT-63).
+- Entschieden (Website-TT-63, 2026-10-22): die Seite ist
+  `reaperldtools.appcrow.at` und zeigt die neutrale Fassung „LD Tools“; ihr
+  Download-Knopf lädt `LD-Tools-macOS.dmg` / `LD-Tools-Windows.zip` über
+  `releases/latest/download/…` (ab v2.1.0). Der Dateiname-Slug
+  `ld-plugin-set` der Bilder bleibt; die Website benennt beim Übernehmen um.
 
 ## Was fehlt
 

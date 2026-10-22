@@ -14,6 +14,9 @@
 # Usage:
 #   ./build-package.sh [mac|win|all]              branded (default: all)
 #   ./build-package.sh [mac|win|all] --neutral    the neutral "LD Tools" build
+#       Every release MUST ship LD-Tools-macOS.dmg and LD-Tools-Windows.zip
+#       under exactly these names: reaperldtools.appcrow.at links to
+#       releases/latest/download/<name> (since v2.1.0, 2026-10-23).
 #   ./build-package.sh stage-neutral <dir> [macOS|Windows]
 #                                                 neutral payload into <dir>,
 #                                                 no dmg/zip, no PDFs (tests)

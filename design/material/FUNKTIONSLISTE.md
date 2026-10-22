@@ -1,6 +1,6 @@
 # Funktionsliste mit Beleg — steelblue LD Tools (REAPER LD Plugin Set)
 
-Stand: v2.0.0 (GitHub Release 2026-09-16), Repo-Commit `e0a9f22` (main, 2026-10-19).
+Stand: v2.1.0 (Repo-Commit `c7441c7`, main, 2026-10-23; Funktionen unverändert gegenüber v2.0.0, GitHub Release 2026-09-16). Die Seite zeigt die neutrale Fassung „LD Tools“; die UI-Wörter unten sind identisch, nur der Fenstertitel heißt „LD Tools“ statt „steelblue LD Tools“.
 Pfade sind relativ zum Repo. Die Benutzeroberfläche ist nur Englisch; es gibt keine
 deutschen UI-Wörter. Die exakten UI-Wörter stehen in Anführungszeichen.
 
