@@ -1,0 +1,6 @@
+# Vorlage für website/ziel.conf (nicht im Repo): SSH-Zugang zum Webhosting.
+# Werte aus Plesk › appcrow.at › Webhosting-Zugang. Anmeldung nur per
+# SSH-Schlüssel, nie mit Passwort. Der Dokumentstamm steht in website.conf.
+SSH_BENUTZER=hosting000000
+SSH_SERVER=hosting000000.a0000.netcup.net
+SSH_SCHLUESSEL=~/.ssh/appcrow_website_ed25519

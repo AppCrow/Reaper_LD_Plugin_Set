@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en" data-theme="dunkel">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LD Tools – marker tools for lighting design in REAPER</title>
+<meta name="description" content="Free tools for lighting designers in REAPER: markers from MIDI notes, renaming for the grandMA3 import, copying markers and live BPM.">
+<link rel="canonical" href="https://reaperldtools.appcrow.at/en/">
+<link rel="alternate" hreflang="de" href="https://reaperldtools.appcrow.at/">
+<link rel="alternate" hreflang="en" href="https://reaperldtools.appcrow.at/en/">
+<link rel="alternate" hreflang="x-default" href="https://reaperldtools.appcrow.at/en/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="AppCrow">
+<meta property="og:title" content="LD Tools – marker tools for lighting design in REAPER">
+<meta property="og:description" content="Free tools for lighting designers in REAPER: markers from MIDI notes, renaming for the grandMA3 import, copying markers and live BPM.">
+<meta property="og:url" content="https://reaperldtools.appcrow.at/en/">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="de_AT">
+<meta property="og:image" content="https://reaperldtools.appcrow.at/assets/reaperldtools-icon.png">
+<meta property="og:image:width" content="256">
+<meta property="og:image:height" content="256">
+<meta property="og:image:alt" content="LD Tools icon">
+<meta name="twitter:card" content="summary">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"LD Tools","description":"Free tools for lighting designers in REAPER: markers from MIDI notes, renaming for the grandMA3 import, copying markers and live BPM.","url":"https://reaperldtools.appcrow.at/en/","inLanguage":"en","image":"https://reaperldtools.appcrow.at/assets/reaperldtools-icon.png","operatingSystem":"macOS, Windows","publisher":{"@type":"Organization","name":"AppCrow","url":"https://appcrow.at/"}}</script>
+<link rel="icon" href="../favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="../assets/reaperldtools-icon.png">
+<link rel="stylesheet" href="../assets/stil.css">
+<link rel="stylesheet" href="../assets/produkt.css">
+<style>:root{--ton:248;--app-akzent-dunkel:#a9c9e8;--app-auf-akzent-dunkel:#0b1a2a;--app-akzent-hell:#2f5f8a}</style>
+<script>(function(d){var t;try{t=sessionStorage.getItem('thema')}catch(e){}d.dataset.theme=t==='hell'||t==='dunkel'?t:matchMedia('(prefers-color-scheme: light)').matches?'hell':'dunkel'})(document.documentElement);</script>
+<style>.js .ohne-js{display:none}</style><script>document.documentElement.classList.add('js')</script>
+</head>
+<body>
+<a class="sprunglink" href="#inhalt">Skip to content</a>
+<header class="rahmen kopf">
+<div class="kopf-links"><a class="marke" href="../"><img class="app-icon" src="../assets/reaperldtools-icon.png" alt="" width="32" height="32">LD Tools</a></div>
+<div class="kopf-rechts">
+<nav class="navi" aria-label="Main menu"><a href="https://appcrow.at/en/">AppCrow</a><a class="wahlweise" href="#funktionen">Features</a><a class="wahlweise" href="#preis">Price</a><a class="wahlweise" href="#fragen">FAQ</a><a class="wahlweise" href="#hilfe">Help</a></nav>
+<nav class="sprachwahl-nav" aria-label="Language"><details class="sprachwahl"><summary title="Language" aria-label="EN, choose language"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"></path></g></svg><span>EN</span><svg class="pfeil" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg></summary><ul class="sprachwahl-liste"><li><a href="../" lang="de" hreflang="de">Deutsch</a></li><li><a href="../en/" lang="en" hreflang="en" aria-current="true">English</a></li></ul></details></nav>
+<button type="button" class="thema" id="schalter-thema" aria-pressed="true" aria-label="Dark" title="Appearance"><svg class="sonne" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"></path></g></svg><svg class="mond" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path></svg></button>
+</div>
+</header>
+<main id="inhalt">
+<section class="rahmen einstieg">
+<div class="einstieg-text">
+<p class="einstieg-marke"><img class="app-icon" src="../assets/reaperldtools-icon.png" alt="" width="56" height="56"><span>LD Tools</span></p>
+<h1>Markers for your light show, right in REAPER.</h1>
+<p class="satz">LD Tools are four free tools for lighting designers in REAPER, in one window: set markers from MIDI notes, rename markers for the grandMA3 import, copy groups of markers and measure the tempo live.</p>
+<div class="knoepfe"><a class="knopf haupt" href="https://github.com/tobis-tales/Reaper_LD_Plugin_Set/releases/latest/download/LD-Tools-macOS.dmg">Download for macOS</a><a class="knopf zweit" href="https://github.com/tobis-tales/Reaper_LD_Plugin_Set/releases/latest/download/LD-Tools-Windows.zip">Download for Windows</a></div>
+<p class="klein">Free and open source (MIT). For REAPER 7 on macOS and Windows.</p>
+</div>
+<div class="einstieg-medien"><img class="bild" src="../medien/ld-tools-neutral-en-1-rename.jpg" alt="REAPER window with LD Tools docked at the bottom: the “Rename selected markers” tab with four markers selected and the preview Kick(1)[Top]^Kick^" width="1080" height="1080"></div>
+</section>
+<section class="rahmen abschnitt" id="galerie">
+<div class="abschnitt-kopf"><h2 id="galerie-titel">A look inside</h2><div class="galerie-knoepfe"><button type="button" data-richtung="-1" aria-label="Previous" aria-disabled="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></button><button type="button" data-richtung="1" aria-label="Next"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></button></div></div>
+<div class="galerie quadrat" id="galerie-liste" tabindex="0" role="region" aria-labelledby="galerie-titel">
+<figure><img class="bild" src="../medien/ld-tools-neutral-en-1-rename.jpg" alt="LD Tools at the bottom of the REAPER window, “Rename selected markers” tab: four markers selected, command “Top”, “Also set colour” on, preview Kick(1)[Top]^Kick^" width="1080" height="1080" loading="lazy"><figcaption><h3>Rename to MA-Tools syntax.</h3><p>Select markers in the Region/Marker Manager, fill in cue name, command and sequence, and the preview shows the result. Give the markers a new color if you like.</p></figcaption></figure>
+<figure><img class="bild" src="../medien/ld-tools-neutral-en-2-rename-result.jpg" alt="The same REAPER window after renaming: the four markers in the ruler are named Kick(1)[Top]^Kick^ and are mint green" width="1080" height="1080" loading="lazy"><figcaption><h3>One click, four markers.</h3><p>All four are now named in the format the grandMA3 import reads, in one shared color.</p></figcaption></figure>
+<figure><img class="bild" src="../medien/ld-tools-neutral-en-4-midi.jpg" alt="LD Tools, “MIDI notes to markers” tab with “MA-Tools syntax” and “Replace existing markers in these lanes”; above it the message “47 markers created in 1 lanes.” and a new marker lane “Kick”" width="1080" height="1080" loading="lazy"><figcaption><h3>Markers from MIDI notes.</h3><p>Every note becomes a marker, in MA-Tools syntax if you like, in a lane of its own for each track. Here 47 markers from the “Kick” track.</p></figcaption></figure>
+<figure><img class="bild" src="../medien/ld-tools-neutral-en-3-copy.jpg" alt="LD Tools, “Copy Markers” tab: four markers from 21.1.00 to 173.1.00 ticked, target 225.1.00 or 00:07:28:00, buttons “Copy to cursor”, “Copy to measure.beats” and “Copy to hh:mm:ss:ff”; in the ruler the copies from measure 225" width="1080" height="1080" loading="lazy"><figcaption><h3>Copy groups of markers.</h3><p>With names, colors and spacing, to a new spot by measure, by timecode or at the cursor.</p></figcaption></figure>
+</div>
+</section>
+<section class="rahmen abschnitt" id="funktionen">
+<h2>What you get</h2>
+<div class="funktionen">
+<div><h3>One window for everything</h3><p>Three tabs for renaming, MIDI notes and copying, with the tempo in the header. The window sits docked at the bottom of REAPER and opens with REAPER.</p></div>
+<div><h3>Live tempo</h3><p>Reads the tempo of an audio item to two decimals, even while REAPER is playing. “Half” and “Double” fix the octave, and “Set project tempo” applies it without moving your items.</p></div>
+<div><h3>Markers from MIDI notes</h3><p>Every note becomes a marker, one lane per track. Tracks with the same name before the brackets, such as “Kick (12)” and “Kick (13)”, share a lane; existing markers in it are replaced if you like.</p></div>
+<div><h3>Renaming for grandMA3</h3><p>Builds names in the format Cue(number)[Command]^Sequence^ for a whole selection at once, with a preview. Cue numbers count in the order you click.</p></div>
+<div><h3>Copy markers</h3><p>A group of markers with their names, colors and spacing, copied to another spot, say for the chorus that comes back.</p></div>
+<div><h3>Installs inside REAPER</h3><p>A script in REAPER puts everything in place: scripts, actions and the two extensions needed. It suggests shortcuts; you set them yourself.</p></div>
+</div>
+</section>
+<section class="rahmen abschnitt" id="preis">
+<h2>Price</h2>
+<div class="preis"><div class="preiskarte"><p class="betrag">Free</p><p class="betrag-zusatz">Open source under the MIT license</p><ul><li>macOS (Apple silicon and Intel) and Windows (64-bit).</li><li>No account, no sign-in.</li><li>Source and release history on GitHub.</li></ul><div class="knoepfe"><a class="knopf haupt" href="https://github.com/tobis-tales/Reaper_LD_Plugin_Set/releases/latest/download/LD-Tools-macOS.dmg">Download for macOS</a><a class="knopf zweit" href="https://github.com/tobis-tales/Reaper_LD_Plugin_Set/releases/latest/download/LD-Tools-Windows.zip">Download for Windows</a></div><p class="klein">The download comes from GitHub. For a new version, download it and run the installer again; your shortcuts stay as they are.</p></div></div>
+</section>
+<section class="rahmen abschnitt seitlich" id="fragen">
+<h2>Frequently asked</h2>
+<div class="fragen">
+<details><summary>What do I need?</summary><p>REAPER 7, and REAPER 7.72 or later for marker lanes. The extensions ReaImGui and js_ReaScriptAPI come with it, and the installer puts them in place. You do not need SWS.</p></details>
+<details><summary>Why no regular installer?</summary><p>Only a script inside REAPER can create actions and open the shortcut dialog. That is why you install LD Tools from within REAPER. After the extensions are installed, restart REAPER once.</p></details>
+<details><summary>What is MA-Tools syntax?</summary><p>A marker name like Kick(1)[Top]^Kick^: cue name, cue number, command and sequence. It is the format the grandMA3 marker import reads.</p></details>
+<details><summary>My shortcut clears the selection. Why?</summary><p>When the Region/Marker Manager has focus, it swallows the shortcut. Click into the arrange view first, then press the shortcut.</p></details>
+<details><summary>How accurate is the tempo?</summary><p>In my test with a real song, it was off by less than 0.02 BPM.</p></details>
+<details><summary>How do I get a new version?</summary><p>Download the new version and run the installer again. There is no automatic notice of new versions.</p></details>
+</div>
+</section>
+<section class="rahmen abschnitt seitlich" id="datenschutz">
+<h2>Privacy in short</h2>
+<div class="ds-text"><p>The LD Tools code does not access the internet. There is no account, no usage statistics and no crash reports. Everything is stored only on your computer: the scripts, the actions, the two extensions and a few settings such as the last open tab and the last color used in your REAPER folder, and the markers in your project.</p><p>The bundled extensions ReaImGui and js_ReaScriptAPI are unmodified builds by their authors; I have not checked their network behavior myself. The download comes from GitHub, where GitHub’s privacy policy applies.</p><p><a href="https://appcrow.at/en/privacy/#ldtools">Full privacy policy <span aria-hidden="true">→</span></a></p></div>
+</section>
+<section class="rahmen abschnitt seitlich" id="voraussetzungen">
+<h2>System requirements</h2>
+<p class="text-leise">REAPER 7, marker lanes from REAPER 7.72. macOS with Apple silicon or Intel, Windows 64-bit. Interface in English only.</p>
+</section>
+<section class="rahmen abschnitt" id="hilfe">
+<h2>Help and contact</h2>
+<p class="abschnitt-satz">Questions, bugs, wishes: all welcome. I only need your name and email if you want a reply. You can also report bugs on <a href="https://github.com/tobis-tales/Reaper_LD_Plugin_Set/issues">GitHub</a>.</p>
+<p class="kasten ohne-js">The form needs JavaScript for spam protection. Please enable JavaScript to write to me.</p>
+<form id="formular" class="formular" action="https://appcrow.at/api/kontakt.php" method="post">
+<input type="hidden" name="thema" value="ldtools"><input type="hidden" name="lang" value="en"><input type="hidden" name="elapsed" value=""><input type="hidden" name="check" value="">
+<div class="honig" aria-hidden="true"><label for="website">Website</label><input type="text" id="website" name="website" tabindex="-1" autocomplete="off"></div>
+<label>Name <span class="feld-hinweis">Optional</span><input name="name" autocomplete="name" maxlength="200"></label>
+<label>Email <span class="feld-hinweis">Optional, only if you want a reply</span><input type="email" name="email" autocomplete="email" maxlength="254"></label>
+<label>Message<textarea name="message" rows="6" maxlength="20000" required></textarea></label>
+<p class="klein">I only use your details to reply to you. More in the <a href="https://appcrow.at/en/privacy/#contact">privacy policy</a>.</p>
+<div class="absenden"><button class="knopf haupt" type="submit">Send message</button><span id="status" class="klein" role="status"></span></div>
+</form>
+<div id="danke" class="danke" hidden tabindex="-1"><h3>Thanks for your message</h3><p>It has arrived. If you entered an email address, I’ll reply there.</p></div>
+</section>
+</main>
+<footer class="rahmen fuss">
+<span>© 2026 <a class="studio" href="https://appcrow.at/en/"><img class="nur-dunkel" src="../assets/appcrow-symbol-a2.png" alt="" width="22" height="18"><img class="nur-hell" src="../assets/appcrow-symbol-a1.png" alt="" width="21" height="18">AppCrow</a></span>
+<nav aria-label="Legal"><a href="https://appcrow.at/en/contact/?thema=ldtools">Contact</a><a href="https://appcrow.at/impressum/" hreflang="de">Legal notice (<span lang="de">Impressum</span>)</a><a href="https://appcrow.at/en/privacy/#ldtools">Privacy</a></nav>
+
+</footer>
+<script src="../assets/produkt.js" data-texte='{"warte":"One moment, please send again shortly.","leer":"Please write a message.","mail":"This email address does not look valid.","viele":"Too many messages in a short time. Please try again in an hour.","fehler":"Sending failed. Please try again later.","sendet":"Sending …"}'></script>
+</body>
+</html>

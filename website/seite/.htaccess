@@ -1,0 +1,43 @@
+# reaperldtools.appcrow.at
+
+# Adressen und Zwischenspeicher (AppCrow Phase 10, SEO). Gleich in allen drei Seiten,
+# geprüft von App Crow/Website/scripts/htaccess-test.sh (echter Apache am Bau) und
+# live-check.sh (Stufe seo-a11y, nur GET).
+RewriteEngine On
+# www.<host>/… → https://<host>/… (eine Adresse je Seite), vor allen anderen Regeln; ein Port
+# im Host (nur beim Test mit dem lokalen Apache) fällt weg.
+RewriteCond %{HTTP_HOST} ^www\.([^:]+)(:[0-9]+)?$ [NC]
+RewriteRule ^ https://%1%{REQUEST_URI} [R=301,L]
+# …/index.html → …/ (Ordner-Adresse wie canonical und Sitemap). Nur wenn der Browser
+# index.html verlangt hat (THE_REQUEST): das interne Nachschlagen der DirectoryIndex
+# bleibt unberührt, sonst entstünde eine Schleife.
+RewriteCond %{THE_REQUEST} ^[A-Z]+\ ((?:/[^/?\ ]+)*/)index\.html(?:[?\ ]|$)
+RewriteRule (?:^|/)index\.html$ %1 [R=301,L,NE]
+<IfModule mod_headers.c>
+# Zwischenspeichern: Bilder, Videos, Icons 30 Tage, CSS/JS 1 Tag, HTML immer nachfragen
+# (no-cache; mit ETag antwortet der Server dann 304). „Header set“ ohne „always“: nur bei
+# Erfolg, eine 404 merkt sich niemand 30 Tage. Nicht unter /statistik/ (eigene .htaccess:
+# no-store, sonst stünde Cache-Control dort doppelt). Gleicher Dateiname = gleicher
+# Inhalt für bis zu 30 Tage: ein geändertes Bild bekommt einen neuen Namen.
+Header set Cache-Control "max-age=2592000" "expr=%{REQUEST_FILENAME} =~ /\.(png|jpe?g|webp|avif|gif|svg|ico|mp4|webm)$/ && %{REQUEST_URI} !~ m#^/statistik/#"
+Header set Cache-Control "max-age=86400" "expr=%{REQUEST_FILENAME} =~ /\.(css|js)$/ && %{REQUEST_URI} !~ m#^/statistik/#"
+Header set Cache-Control "no-cache" "expr=%{REQUEST_FILENAME} =~ /\.html$/ && %{REQUEST_URI} !~ m#^/statistik/#"
+</IfModule>
+
+# Sicherheits-Header (AppCrow, 2026-10-05). Gleich in allen drei Seiten, geprüft von
+# App Crow/Website/scripts/check.sh (Bau) und live-check.sh (live, je Dateiart, GET).
+# Wirkt nur, wenn Apache ausliefert: in Plesk liefert nginx keine statischen Dateien
+# selbst aus (Umstellung 2026-10-05). HSTS 1 Jahr (seit 2026-10-10, vorher 1 Tag Probe), ohne includeSubDomains.
+<IfModule mod_headers.c>
+Header always set Strict-Transport-Security "max-age=31536000"
+Header always set X-Frame-Options "SAMEORIGIN"
+Header always set Content-Security-Policy "frame-ancestors 'self'"
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
+Header always set X-Content-Type-Options "nosniff"
+Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+</IfModule>
+
+# Eigene Fehlerseite (Phase 10, 2026-10-08): jede fehlende Adresse bekommt /404.html, der
+# Status bleibt 404 (lokaler Pfad, keine Weiterleitung), die Sicherheits-Header oben gelten mit.
+# Geprüft von App Crow/Website/scripts/fehlerseite-pruefen.py (Bau) und live-check.sh (Stufe seo-a11y).
+ErrorDocument 404 /404.html
