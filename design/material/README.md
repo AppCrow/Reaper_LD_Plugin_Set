@@ -8,14 +8,29 @@ ist **vorläufig**, bis Tobi es freigibt. Der Ordner `design/` wird von
 
 | Datei | Was man sieht | Stand |
 | --- | --- | --- |
-| `AppIcon-1024.png` | Tobis Icon (2026-10-22): drei gestaffelte Ruler-Lanes mit je einem Marker-Pin, violett, abgerundetes Quadrat auf dunklem Grund; 1024×1024, kein Alpha | **von Tobi geliefert**, aus `AppIcon-source-1254.png` mit ffmpeg (lanczos) auf 1024 verkleinert |
-| `AppIcon-source-1254.png` | Dasselbe Icon in Tobis Originalgröße 1254×1254 | Quelle, unverändert |
+| `AppIcon-1024.png` | Tobis Icon (2026-10-22): drei gestaffelte Ruler-Lanes mit je einem Marker-Pin in Steelblue, abgerundetes Quadrat auf dem Fenstergrau der Plugins `#232326`; 1024×1024, kein Alpha | **freigegeben von Tobi (Entwurf E, 22.10.2026)** — aus `AppIcon-source-1254.png` umgefärbt, siehe unten |
+| `AppIcon-source-1254.png` | Dasselbe Icon in Tobis Original (violett), 1254×1254 | Quelle, unverändert |
 | `ld-plugin-set-en-1-rename.png` | Fenster „Rename selected markers“, 4 Marker gewählt, Vorschau `Pre Chorus 1(1)[Top]^Pre Chorus 1^` | vorläufig |
 | `ld-plugin-set-en-2-midi.png` | Fenster „MIDI notes to project markers“ | vorläufig |
 | `ld-plugin-set-en-3-copy.png` | Fenster „Copy Markers“ mit Zielfeldern | vorläufig |
 | `ld-plugin-set-en-4-bpm.png` | Fenster „Live BPM Analyzer“ mit Messwert | vorläufig |
 | `ld-plugin-set-en-5-workspace.png` | Workspace: Tabs und BPM-Block im Kopf | vorläufig |
 | `FUNKTIONSLISTE.md` | Funktionen mit Datei/Funktion-Beleg und exakten UI-Wörtern | fertig für v2.0.0 |
+
+## Wie das Icon entstanden ist
+
+Tobis violettes Original, mit ffmpeg auf die Set-Farben gebracht: Farbton um
+−90° gedreht (Magenta → Steelblue), Sättigung ×0,82, dann alle Töne unter
+Luma 35 auf neutrales Grau gezogen (Hintergrund und Rahmen landen bei `#232326`,
+Luma 35–80 blendet weich über), zuletzt lanczos auf 1024. Lane-Pixel messen
+`103,132,169`, das Ziel `#4682B4` ist `70,130,180`. Reproduzierbar mit:
+
+```
+L='(0.299*r(X,Y)+0.587*g(X,Y)+0.114*b(X,Y))'; K="clip(($L-35)/45,0,1)"; G="clip($L+13,0,255)"
+ffmpeg -i AppIcon-source-1254.png -vf "hue=h=-90:s=0.82,format=rgb24,geq=r='r(X,Y)*$K+$G*(1-$K)':g='g(X,Y)*$K+$G*(1-$K)':b='b(X,Y)*$K+$G*(1-$K)',scale=1024:1024:flags=lanczos" AppIcon-1024.png
+```
+
+Tobi hat aus fünf Entwürfen (A–E) E gewählt; die anderen sind verworfen.
 
 ## Wie die Bilder entstanden sind
 
@@ -37,6 +52,4 @@ ist **vorläufig**, bis Tobi es freigibt. Der Ordner `design/` wird von
 - Video 1080×1080 (vorhanden ist nur `Tutorials/video/copy-markers-tutorial.mp4`,
   1080×1920 hochkant, zeigt v1.0). Offen.
 - Finale Screenshots nach Tobis Freigabe von Branding und Beispieldaten.
-- Das Icon ist violett, die Plugin-Oberfläche ist steelblue-blau. Ob die Seite
-  das zusammenbringt (Akzentfarbe, Hintergrund), entscheidet der Website-Dirigent.
 - Keine Aufnahmeskripte → keine `AUFNAHMELISTE.md`.
