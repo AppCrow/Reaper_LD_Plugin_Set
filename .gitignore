@@ -23,3 +23,7 @@ REPORT-phase-*.md
 # REAPER auto-backups next to saved projects
 Backups/
 *.rpp-bak
+
+# Tobi's drop folder for incoming files (icons etc.) and the Finder folder-icon resource
+Input/
+Icon

@@ -8,7 +8,8 @@ ist **vorläufig**, bis Tobi es freigibt. Der Ordner `design/` wird von
 
 | Datei | Was man sieht | Stand |
 | --- | --- | --- |
-| `AppIcon-1024.png` | Das steelblue-Bildzeichen (grauer Block, weiße Linse, blaue Pupille) auf dem Fensterhintergrund der Plugins `#232326`, 1024×1024, kein Alpha | vorläufig — Kandidat, aus `Tutorials/mark.svg` mit Chrome headless gerendert; Freigabe Tobi fehlt |
+| `AppIcon-1024.png` | Tobis Icon (2026-10-22): drei gestaffelte Ruler-Lanes mit je einem Marker-Pin, violett, abgerundetes Quadrat auf dunklem Grund; 1024×1024, kein Alpha | **von Tobi geliefert**, aus `AppIcon-source-1254.png` mit ffmpeg (lanczos) auf 1024 verkleinert |
+| `AppIcon-source-1254.png` | Dasselbe Icon in Tobis Originalgröße 1254×1254 | Quelle, unverändert |
 | `ld-plugin-set-en-1-rename.png` | Fenster „Rename selected markers“, 4 Marker gewählt, Vorschau `Pre Chorus 1(1)[Top]^Pre Chorus 1^` | vorläufig |
 | `ld-plugin-set-en-2-midi.png` | Fenster „MIDI notes to project markers“ | vorläufig |
 | `ld-plugin-set-en-3-copy.png` | Fenster „Copy Markers“ mit Zielfeldern | vorläufig |
@@ -36,4 +37,6 @@ ist **vorläufig**, bis Tobi es freigibt. Der Ordner `design/` wird von
 - Video 1080×1080 (vorhanden ist nur `Tutorials/video/copy-markers-tutorial.mp4`,
   1080×1920 hochkant, zeigt v1.0). Offen.
 - Finale Screenshots nach Tobis Freigabe von Branding und Beispieldaten.
+- Das Icon ist violett, die Plugin-Oberfläche ist steelblue-blau. Ob die Seite
+  das zusammenbringt (Akzentfarbe, Hintergrund), entscheidet der Website-Dirigent.
 - Keine Aufnahmeskripte → keine `AUFNAHMELISTE.md`.
