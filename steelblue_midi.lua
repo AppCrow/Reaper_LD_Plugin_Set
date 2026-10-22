@@ -321,7 +321,8 @@ local function completion_text(result)
   local text
 
   if result.lanes > 0 then
-    text = tostring(result.created) .. " markers created in " .. tostring(result.lanes) .. " lanes"
+    text = tostring(result.created) .. " markers created in " .. tostring(result.lanes) ..
+      (result.lanes == 1 and " lane" or " lanes")
 
     if result.replaced > 0 then
       text = text .. " (" .. tostring(result.replaced) .. " replaced)"
