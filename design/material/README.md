@@ -15,6 +15,11 @@ ist **vorläufig**, bis Tobi es freigibt. Der Ordner `design/` wird von
 | `ld-plugin-set-en-3-copy.png` | Fenster „Copy Markers“ mit Zielfeldern | vorläufig |
 | `ld-plugin-set-en-4-bpm.png` | Fenster „Live BPM Analyzer“ mit Messwert | vorläufig |
 | `ld-plugin-set-en-5-workspace.png` | Workspace: Tabs und BPM-Block im Kopf | vorläufig |
+| `ld-tools-neutral-en-1-rename.png` | **Neutral** (LD Tools, gedockt im REAPER-Fenster): Tab „Rename selected markers“, 4 Marker, Vorschau `Kick(1)[Top]^Kick^` | Tobis Aufnahme 22.10.2026, umgebaut |
+| `ld-tools-neutral-en-2-rename-result.png` | Neutral: dasselbe nach dem Umbenennen, Marker 1–4 heißen `Kick(1)[Top]^Kick^` | dito |
+| `ld-tools-neutral-en-3-copy.png` | Neutral: Tab „Copy Markers“ nach dem Kopieren, Cursor bei 225.1.00, Liste mit 5 Markern, 4 gewählt | dito |
+| `ld-tools-neutral-en-4-midi.png` | Neutral: Tab „MIDI notes to markers“ mit Meldung „47 markers created in 1 lanes“, Lane „Kick“ im Lineal. Macke: während der Meldung steht „OFFLINE“ über dem Audio-Item | dito, Ersatzaufnahme offen (TT 140) |
+| `src-neutral/ld-tools-{1-rename,2-rename-result,3-copy,4-midi}.png` | Die vier Originale, 3024 px breit, mit Alpha | Quelle |
 | `FUNKTIONSLISTE.md` | Funktionen mit Datei/Funktion-Beleg und exakten UI-Wörtern | fertig für v2.0.0 |
 
 ## Wie das Icon entstanden ist
@@ -41,9 +46,12 @@ Tobi hat aus fünf Entwürfen (A–E) E gewählt; die anderen sind verworfen.
   `#232326`, Alpha entfernt. Kein Nachschärfen, kein Text.
 - Die Oberfläche ist nur Englisch. Darum gibt es nur `-en-` Bilder; nach
   `docs/anforderungen-neue-app-website.md` gelten sie für beide Sprachen.
-- Die Bilder zeigen das **steelblue**-Branding. Falls die Seite die neutrale
-  „LD Tools“-Variante zeigen soll, müssen alle fünf neu aufgenommen werden
-  (TT 138 offen).
+- Die `ld-plugin-set-*`-Bilder zeigen das **steelblue**-Branding, die
+  `ld-tools-neutral-*`-Bilder die neutrale Fassung „LD Tools“ (Tobis Aufnahmen
+  vom 22.10.2026 in `src-neutral/`, Workspace unten im REAPER-Fenster gedockt,
+  derselbe ffmpeg-Umbau). Neutral fehlen ein reines BPM-Motiv (der BPM-Block
+  sitzt in jedem Kopf, 113.77 BPM) und ein MIDI-Bild ohne Meldungsbox und ohne
+  „OFFLINE“ (TT 140). Welche Reihe auf die Seite kommt, entscheidet TT 139.1.
 - Der Dateiname-Slug `ld-plugin-set` ist ein Platzhalter, bis Tobi die
   Subdomain festlegt. Umbenennen ist dann ein `mv`.
 
