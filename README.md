@@ -11,7 +11,7 @@ If you build light shows to a timeline, you probably live in REAPER's markers: o
 
 Since 2.0 there is a fifth thing in the package: **steelblue LD Tools**, one window that sits in REAPER's bottom docker next to the Mixer and holds all of it — the live tempo read-out in its header band, and Rename, MIDI and Copy as tabs. It opens with REAPER and stays there, so none of this needs starting any more. The four single plugins are still in the package and still work exactly as before.
 
-2.0.0 was tested on macOS. Windows was tested for 1.0.0 and everything since is platform-neutral Lua — except the docker slot the workspace asks REAPER for, which has only ever been verified on macOS. REAPER 7.
+2.0.0 and the neutral LD Tools build of 2.1.0 were tested on macOS. Windows was tested for 1.0.0 and everything since is platform-neutral Lua — except the docker slot the workspace asks REAPER for, which has only ever been verified on macOS. REAPER 7.
 
 ## The plugins
 
@@ -28,6 +28,11 @@ Since 2.0 there is a fifth thing in the package: **steelblue LD Tools**, one win
   &nbsp;
   <img src="Tutorials/img/workspace-02-copy.png" alt="The Copy Markers tab with the marker list" width="46%">
 </div>
+
+## What's new in 2.1.0
+
+- **LD Tools, the neutral build** — the same package without the steelblue studios branding, as `LD-Tools-macOS.dmg` and `LD-Tools-Windows.zip`. Built from the same source (`./build-package.sh all --neutral`), it installs into `Scripts/ld-tools/`, registers its window as "LD Tools", and can live side by side with the branded set. See [Neutral build (LD Tools)](#neutral-build-ld-tools).
+- **MIDI notes to project markers** — the summary says "1 lane", not "1 lanes".
 
 ## What's new in 2.0.0
 
