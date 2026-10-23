@@ -100,6 +100,34 @@ html:not(.js) .galerie-knoepfe{display:none}
 .galerie.quadrat{grid-auto-columns:minmax(280px,440px);gap:32px}
 .galerie.quadrat .bild{border-radius:20px;box-shadow:none}
 
+/* Großbild: Galerie-Bild groß über der Seite (Tobi 2026-10-23; Dialog baut produkt.js) */
+#galerie-liste [role="button"]{cursor:zoom-in}
+html.grossbild-offen{overflow:hidden}
+.grossbild{position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:64px 16px 84px;border:0;box-sizing:border-box;background:rgba(8,8,10,.97);color:#fff;overscroll-behavior:contain;touch-action:pinch-zoom}
+.grossbild[open]{display:grid;place-items:center}
+.grossbild::backdrop{background:transparent}
+.grossbild figure{margin:0;display:grid;gap:14px;justify-items:center;min-width:0;min-height:0}
+.grossbild img{display:block;width:auto;height:auto;max-width:100%;max-height:calc(100dvh - 190px);border-radius:16px}
+.grossbild figcaption{font-size:17px;line-height:1.35;text-align:center;text-wrap:balance}
+.grossbild button{position:absolute;width:44px;height:44px;padding:0;border:0;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,.14);color:#fff;cursor:pointer}
+.grossbild button[aria-disabled="true"]{opacity:.35;cursor:default}
+.grossbild svg{width:18px;height:18px}
+.grossbild-zu{top:12px;right:12px}
+.grossbild [data-schritt]{bottom:20px}
+.grossbild [data-schritt="-1"]{left:calc(50% - 52px)}
+.grossbild [data-schritt="1"]{left:calc(50% + 8px)}
+.grossbild [data-schritt="1"] svg{transform:scaleX(-1)}
+@media (min-width:761px){
+.grossbild{padding:16px 88px}
+.grossbild img{max-height:calc(100dvh - 100px)}
+.grossbild [data-schritt]{bottom:auto;top:calc(50% - 22px)}
+.grossbild [data-schritt="-1"]{left:24px}
+.grossbild [data-schritt="1"]{left:auto;right:24px}
+}
+@media (hover:hover){.grossbild button:not([aria-disabled="true"]):hover{background:rgba(255,255,255,.26)}}
+@media (prefers-reduced-motion:no-preference){.grossbild[open]{animation:grossbild-auf .18s ease-out}}
+@keyframes grossbild-auf{from{opacity:0}to{opacity:1}}
+
 /* Funktionen: ruhige Liste mit Haarlinien statt Kästen */
 .funktionen{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 48px}
 .funktionen>div{padding:24px 0 32px;border-top:1px solid var(--linie)}

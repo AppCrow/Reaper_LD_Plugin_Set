@@ -1,4 +1,4 @@
-/* Produktseiten: Hell/Dunkel, Sprachmenü, Galerie-Knöpfe, Kauffenster, Kontaktformular. Nur eigener Server, außer lemon.js beim Klick auf „Kaufen“; merkt sich nur die Hell/Dunkel-Wahl für diesen Besuch (sessionStorage, Tobi 2026-10-03). */
+/* Produktseiten: Hell/Dunkel, Sprachmenü, Galerie-Knöpfe, Großbild, Kauffenster, Kontaktformular. Nur eigener Server, außer lemon.js beim Klick auf „Kaufen“; merkt sich nur die Hell/Dunkel-Wahl für diesen Besuch (sessionStorage, Tobi 2026-10-03). */
 (function () {
   var d = document.documentElement, skript = document.currentScript, b = document.getElementById('schalter-thema');
   function setze(t) { d.dataset.theme = t; if (b) b.setAttribute('aria-pressed', t === 'dunkel'); }
@@ -74,6 +74,72 @@
       document.head.appendChild(lemon);
     });
   });
+
+  /* Großbild (Tobi 2026-10-23): Klick, Tippen, Enter oder Leertaste auf ein Galerie-Bild zeigt es groß
+     in einem <dialog> (Fokus bleibt darin, Esc schließt). Pfeiltasten, Knöpfe und Wischen blättern, X oder
+     Klick daneben schließt, danach steht der Fokus auf dem zuletzt gezeigten Bild. Ohne Skript: keine Änderung. */
+  var bilder = [];
+  if (g) g.querySelectorAll('figure').forEach(function (fig) { var e = fig.querySelector('.geraet') || fig.querySelector('img.bild'); if (e) bilder.push(e); });
+  function sichtbar(e) {  // Mobula: im Gerät liegen ein helles und ein dunkles Bild, gezeigt wird eins
+    if (e.tagName === 'IMG') return e;
+    var alle = e.querySelectorAll('img');
+    for (var i = 0; i < alle.length; i++) if (getComputedStyle(alle[i]).display !== 'none') return alle[i];
+    return alle[0];
+  }
+  function titel(e) { var h = e.closest('figure').querySelector('h3'); return h ? h.textContent : ''; }
+  if (bilder.length && window.HTMLDialogElement) {
+    var pfeil = kn.length ? kn[0].innerHTML : '', jetzt = 0, start = null, gewischt = false;
+    var dlg = document.createElement('dialog');
+    dlg.className = 'grossbild';
+    dlg.setAttribute('aria-labelledby', 'grossbild-titel');
+    dlg.innerHTML = '<button type="button" class="grossbild-zu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>'
+      + '<figure><img alt=""><figcaption id="grossbild-titel" aria-live="polite"></figcaption></figure>'
+      + '<button type="button" data-schritt="-1">' + pfeil + '</button><button type="button" data-schritt="1">' + pfeil + '</button>';
+    var zu = dlg.querySelector('.grossbild-zu'), bildG = dlg.querySelector('img'), unter = dlg.querySelector('figcaption'), schritte = dlg.querySelectorAll('[data-schritt]');
+    bildG.draggable = false;  // sonst zieht die Maus das Bild selbst (pointercancel), statt zu blättern
+    zu.setAttribute('aria-label', g.dataset.schliessen || '×');
+    schritte.forEach(function (k, i) {
+      if (kn[i]) k.setAttribute('aria-label', kn[i].getAttribute('aria-label'));
+      if (bilder.length < 2) k.hidden = true;
+      k.onclick = function () { blaettern(+k.dataset.schritt); };
+    });
+    document.body.appendChild(dlg);
+    function zeige(i) {
+      var q = sichtbar(bilder[i]);
+      jetzt = i;
+      bildG.src = q.dataset.gross || q.currentSrc || q.src; bildG.alt = q.alt;
+      unter.textContent = titel(bilder[i]);
+      schritte[0].setAttribute('aria-disabled', i === 0 ? 'true' : 'false');
+      schritte[1].setAttribute('aria-disabled', i === bilder.length - 1 ? 'true' : 'false');
+    }
+    function blaettern(s) { var n = jetzt + s; if (n >= 0 && n < bilder.length) zeige(n); }
+    function auf(i) { zeige(i); d.classList.add('grossbild-offen'); dlg.showModal(); }
+    bilder.forEach(function (e, i) {
+      e.setAttribute('role', 'button'); e.tabIndex = 0; e.setAttribute('aria-haspopup', 'dialog');
+      if (!sichtbar(e).alt) e.setAttribute('aria-label', titel(e));
+      e.addEventListener('click', function () { auf(i); });
+      e.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); auf(i); } });
+    });
+    zu.onclick = function () { dlg.close(); };
+    dlg.addEventListener('close', function () { d.classList.remove('grossbild-offen'); bilder[jetzt].focus(); });
+    dlg.addEventListener('keydown', function (ev) {
+      if (ev.key === 'ArrowLeft') blaettern(-1); else if (ev.key === 'ArrowRight') blaettern(1); else return;
+      ev.preventDefault();
+    });
+    // Wischen: waagrecht mehr als 50 px; der Klick, der danach noch kommen kann, schließt nicht
+    dlg.addEventListener('pointerdown', function (ev) { start = ev.isPrimary ? [ev.clientX, ev.clientY] : null; });
+    dlg.addEventListener('pointercancel', function () { start = null; });
+    dlg.addEventListener('pointerup', function (ev) {
+      if (!start) return;
+      var dx = ev.clientX - start[0], dy = ev.clientY - start[1];
+      start = null; gewischt = Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy);
+      if (gewischt) blaettern(dx < 0 ? 1 : -1);
+    });
+    dlg.addEventListener('click', function (ev) {
+      if (gewischt) { gewischt = false; return; }
+      if (ev.target === dlg || ev.target === bildG.parentNode) dlg.close();
+    });
+  }
 
   var f = document.getElementById('formular');
   if (!f) return;
