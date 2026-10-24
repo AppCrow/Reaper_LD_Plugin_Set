@@ -40,8 +40,9 @@
 # instead of translating them: the seven that show the branded header are
 # removed, five figures are re-pointed at the neutral docked shots Tobi took
 # (ld-*.png — they live in the repo next to the branded ones and ship in both
-# builds), and the two figures without a neutral twin so far (the numbering
-# wrap, the BPM window) are cut out of the guides. See IMG_* in debrand().
+# builds), and the three figures showing a large view (the numbering wrap, the
+# BPM window, the ">>>" popup) are cut out of the guides: the neutral guides
+# show only the docked band (Tobi, 2026-10-24). See IMG_* in debrand().
 #
 # Both products can be installed side by side: the neutral installer uses
 # Scripts/ld-tools/, the action "LD Tools" and ld_* ExtState sections.
@@ -270,8 +271,10 @@ debrand() {
 
   # 1b. the screenshots. Seven PNGs show the branded header band. Where a
   #     neutral twin exists (Tobi's docked "LD Tools" shots, 2026-10-22) the
-  #     figure points at that; a figure without one is cut out of its guide;
-  #     the seven branded files are removed so nothing can show them. Three
+  #     figure points at that; the stand-alone windows and the ">>>" popup are
+  #     cut out of the guides (Tobi's decision, 2026-10-24: the neutral guides
+  #     show only the docked band); the eight files are removed so nothing can
+  #     show them. Three
   #     captions described the stand-alone window and no longer fit the
   #     docked shot, so they are reworded. Runs clean a second time: nothing
   #     is left to match.
@@ -282,7 +285,7 @@ debrand() {
     "img/copy-03-window.png"       "img/ld-workspace-02-copy.png"
     "img/midi-03-window.png"       "img/ld-midi-03-window.png"
   )
-  local -a IMG_DROP=("img/rename-04-numbering.png" "img/bpm-03-window.png")
+  local -a IMG_DROP=("img/rename-04-numbering.png" "img/bpm-03-window.png" "img/workspace-03-bpm.png")
   local -a CAPTION_MAP=(
     "Preview at the top, <strong>Legend</strong> beside it, then the fields."
     "The fields first, then the preview with <strong>Legend</strong> beside it."

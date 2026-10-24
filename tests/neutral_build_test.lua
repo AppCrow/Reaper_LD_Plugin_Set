@@ -163,10 +163,12 @@ check(note:find("LD Tools — REAPER LD Plugin Set\n============================
 check(note:find("Pick  ld_install.lua", 1, true) ~= nil, "READ ME FIRST.txt names ld_install.lua")
 
 -- the screenshots: branded ones gone, neutral ones in, every guide shows only
--- pictures that are there, the two figures without a neutral shot are cut out
+-- pictures that are there, the three large views (numbering wrap, BPM window,
+-- ">>>" popup) are cut out: the neutral guides show only the docked band
 print("\nscreenshots")
 local BRANDED_PNG = { "workspace-01-rename.png", "workspace-02-copy.png", "rename-03-window.png",
-  "copy-03-window.png", "midi-03-window.png", "rename-04-numbering.png", "bpm-03-window.png" }
+  "copy-03-window.png", "midi-03-window.png", "rename-04-numbering.png", "bpm-03-window.png",
+  "workspace-03-bpm.png" }
 local NEUTRAL_PNG = { "ld-workspace-01-rename.png", "ld-workspace-02-copy.png", "ld-midi-03-window.png" }
 for _, name in ipairs(BRANDED_PNG) do
   check(not exists(INNER .. "/Tutorials/img/" .. name), "branded screenshot removed: " .. name)
@@ -209,6 +211,11 @@ check(rename_html:find("rename-04-numbering", 1, true) == nil
 check(bpm_html:find("bpm-03-window", 1, true) == nil
   and bpm_html:find("In the workspace it is the block at the top left", 1, true) ~= nil,
   "BPM guide: window figure cut, the paragraph after it kept")
+local tools_html = read(INNER .. "/Tutorials/ld-tools.html") or ""
+check(tools_html:find("workspace-03-bpm", 1, true) == nil
+  and tools_html:find("Open the analyzer's popup with <code>›››</code>", 1, true) ~= nil
+  and tools_html:find('<img src="img/ld-workspace-02-copy.png"', 1, true) ~= nil,
+  "LD Tools guide: popup figure cut, its step and the Copy figure after it kept")
 
 -- 3. a debranded copy of tests/ next to the payload -----------------------------
 
