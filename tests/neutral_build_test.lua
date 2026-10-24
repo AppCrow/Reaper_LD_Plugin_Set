@@ -162,6 +162,54 @@ check(note:find("LD Tools — REAPER LD Plugin Set\n============================
   "READ ME FIRST.txt: neutral title, underline as long as the title")
 check(note:find("Pick  ld_install.lua", 1, true) ~= nil, "READ ME FIRST.txt names ld_install.lua")
 
+-- the screenshots: branded ones gone, neutral ones in, every guide shows only
+-- pictures that are there, the two figures without a neutral shot are cut out
+print("\nscreenshots")
+local BRANDED_PNG = { "workspace-01-rename.png", "workspace-02-copy.png", "rename-03-window.png",
+  "copy-03-window.png", "midi-03-window.png", "rename-04-numbering.png", "bpm-03-window.png" }
+local NEUTRAL_PNG = { "ld-workspace-01-rename.png", "ld-workspace-02-copy.png", "ld-midi-03-window.png" }
+for _, name in ipairs(BRANDED_PNG) do
+  check(not exists(INNER .. "/Tutorials/img/" .. name), "branded screenshot removed: " .. name)
+end
+for _, name in ipairs(NEUTRAL_PNG) do
+  check(exists(INNER .. "/Tutorials/img/" .. name), "neutral screenshot shipped: " .. name)
+end
+local guides = capture("ls " .. sh_quote(INNER .. "/Tutorials") .. "/*.html")
+local shown, missing, branded_refs = 0, {}, {}
+for guide in guides:gmatch("[^\n]+") do
+  local html = read(guide) or ""
+  for src in html:gmatch('<img src="([^"]+)"') do
+    shown = shown + 1
+    if not exists(INNER .. "/Tutorials/" .. src) then missing[#missing + 1] = src end
+    for _, name in ipairs(BRANDED_PNG) do
+      if src == "img/" .. name then branded_refs[#branded_refs + 1] = src end
+    end
+  end
+end
+check(shown > 0 and #missing == 0, "every picture the guides show is in the package (" .. shown .. " shown"
+  .. (#missing > 0 and ", missing: " .. table.concat(missing, ", ") or "") .. ")")
+check(#branded_refs == 0, "no guide shows a branded screenshot"
+  .. (#branded_refs > 0 and " (" .. table.concat(branded_refs, ", ") .. ")" or ""))
+local rename_html = read(INNER .. "/Tutorials/rename-selected-markers.html") or ""
+local copy_html   = read(INNER .. "/Tutorials/copy-markers.html") or ""
+local midi_html   = read(INNER .. "/Tutorials/midi-notes-to-project-markers.html") or ""
+local bpm_html    = read(INNER .. "/Tutorials/live-bpm-analyzer.html") or ""
+check(rename_html:find('<img src="img/ld-workspace-01-rename.png"', 1, true) ~= nil
+  and rename_html:find("The fields first, then the preview with <strong>Legend</strong> beside it.", 1, true) ~= nil,
+  "rename guide: window figure points at the neutral shot, caption reworded")
+check(copy_html:find('<img src="img/ld-workspace-02-copy.png"', 1, true) ~= nil
+  and copy_html:find("cut off here by the docker", 1, true) ~= nil,
+  "copy guide: window figure points at the neutral shot, caption reworded")
+check(midi_html:find('<img src="img/ld-midi-03-window.png"', 1, true) ~= nil
+  and midi_html:find("The example beside the switch previews the naming", 1, true) ~= nil,
+  "MIDI guide: window figure points at the neutral shot, caption reworded")
+check(rename_html:find("rename-04-numbering", 1, true) == nil
+  and rename_html:find('<img src="img/rename-02b-manager.png"', 1, true) ~= nil,
+  "rename guide: numbering figure cut, the manager figure after it kept")
+check(bpm_html:find("bpm-03-window", 1, true) == nil
+  and bpm_html:find("In the workspace it is the block at the top left", 1, true) ~= nil,
+  "BPM guide: window figure cut, the paragraph after it kept")
+
 -- 3. a debranded copy of tests/ next to the payload -----------------------------
 
 print("\ndebrand tests/")

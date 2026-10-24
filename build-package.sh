@@ -36,8 +36,12 @@
 #   Tutorials/video/     the tutorial video shows the branded windows
 #   Guides (PDF)/        the branded PDFs; re-rendered from the debranded HTML
 #                        when Google Chrome is installed, omitted otherwise
-# The screenshots in Tutorials/img/ stay: they show the branded header, but
-# they are pixels, and re-shooting them is a separate job.
+# The screenshots in Tutorials/img/ are pixels, so debrand() swaps them
+# instead of translating them: the seven that show the branded header are
+# removed, five figures are re-pointed at the neutral docked shots Tobi took
+# (ld-*.png — they live in the repo next to the branded ones and ship in both
+# builds), and the two figures without a neutral twin so far (the numbering
+# wrap, the BPM window) are cut out of the guides. See IMG_* in debrand().
 #
 # Both products can be installed side by side: the neutral installer uses
 # Scripts/ld-tools/, the action "LD Tools" and ld_* ExtState sections.
@@ -264,6 +268,57 @@ debrand() {
   find "$dir" -type d -path '*/Tutorials/video' -prune -exec rm -rf {} +
   find "$dir" -type d -name 'Guides (PDF)' -prune -exec rm -rf {} +
 
+  # 1b. the screenshots. Seven PNGs show the branded header band. Where a
+  #     neutral twin exists (Tobi's docked "LD Tools" shots, 2026-10-22) the
+  #     figure points at that; a figure without one is cut out of its guide;
+  #     the seven branded files are removed so nothing can show them. Three
+  #     captions described the stand-alone window and no longer fit the
+  #     docked shot, so they are reworded. Runs clean a second time: nothing
+  #     is left to match.
+  local -a IMG_MAP=(
+    "img/workspace-01-rename.png"  "img/ld-workspace-01-rename.png"
+    "img/workspace-02-copy.png"    "img/ld-workspace-02-copy.png"
+    "img/rename-03-window.png"     "img/ld-workspace-01-rename.png"
+    "img/copy-03-window.png"       "img/ld-workspace-02-copy.png"
+    "img/midi-03-window.png"       "img/ld-midi-03-window.png"
+  )
+  local -a IMG_DROP=("img/rename-04-numbering.png" "img/bpm-03-window.png")
+  local -a CAPTION_MAP=(
+    "Preview at the top, <strong>Legend</strong> beside it, then the fields."
+    "The fields first, then the preview with <strong>Legend</strong> beside it."
+    "The list is the selection. The count under it says how many are ticked."
+    "The list is the selection. Under it sit <strong>Use selection</strong>, <strong>Clear selection</strong> and the count of ticked markers — cut off here by the docker's tab bar."
+    "The example line under the switch previews the naming, and the count at the bottom tells you what you are about to convert."
+    "The example beside the switch previews the naming, and the count beside the buttons tells you what you are about to convert."
+  )
+  local img_text="" drop_text=""
+  for ((i = 0; i < ${#IMG_MAP[@]}; i += 2)); do
+    img_text+="${IMG_MAP[i]}"$'\t'"${IMG_MAP[i + 1]}"$'\n'
+  done
+  for ((i = 0; i < ${#CAPTION_MAP[@]}; i += 2)); do
+    img_text+="${CAPTION_MAP[i]}"$'\t'"${CAPTION_MAP[i + 1]}"$'\n'
+  done
+  for path in "${IMG_DROP[@]}"; do drop_text+="$path"$'\n'; done
+  local -a guides=()
+  while IFS= read -r -d '' path; do guides+=("$path"); done < <(
+    find "$dir" -type f -path '*/Tutorials/*.html' -print0)
+  if [ ${#guides[@]} -gt 0 ]; then
+    DEBRAND_IMG="$img_text" DEBRAND_DROP="$drop_text" perl -0777 -i -pe '
+      BEGIN {
+        @map  = map { [ split /\t/, $_, 2 ] } split /\n/, $ENV{DEBRAND_IMG};
+        @drop = grep { length } split /\n/, $ENV{DEBRAND_DROP};
+      }
+      for my $d (@drop) { s{<figure>\s*<img src="\Q$d\E"[^>]*>.*?</figure>\s*\n}{}gs }
+      for my $m (@map) { s/\Q$m->[0]\E/$m->[1]/g }
+    ' "${guides[@]}"
+  fi
+  local -a branded_png=()
+  for ((i = 0; i < ${#IMG_MAP[@]}; i += 2)); do branded_png+=("${IMG_MAP[i]#img/}"); done
+  for path in "${IMG_DROP[@]}"; do branded_png+=("${path#img/}"); done
+  for base in "${branded_png[@]}"; do
+    find "$dir" -type f -path "*/Tutorials/img/$base" -exec rm -f {} +
+  done
+
   # 2. the brand table in the theme: anchored, and exactly once per file —
   #    a reformatted or duplicated line must fail here, not ship half-branded
   local ui count found=0
@@ -336,6 +391,17 @@ gate() {
       bad=1
     fi
   done < <(find "$dir" -type f -name '*.lua' -print0)
+  # every picture a guide shows must be in the package (the screenshot swap
+  # in debrand() is the one place that can break this)
+  local guide src
+  while IFS= read -r -d '' guide; do
+    while IFS= read -r src; do
+      if [ ! -f "$(dirname "$guide")/$src" ]; then
+        echo "gate: $guide shows a picture that is not there: $src" >&2
+        bad=1
+      fi
+    done < <(grep -o '<img src="[^"]*"' "$guide" | sed 's/^<img src="//; s/"$//')
+  done < <(find "$dir" -type f -path '*/Tutorials/*.html' -print0)
   [ "$bad" = 0 ] || die "gate failed for $dir"
 }
 
