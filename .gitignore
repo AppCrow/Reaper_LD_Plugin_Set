@@ -27,3 +27,11 @@ Backups/
 # Tobi's drop folder for incoming files (icons etc.) and the Finder folder-icon resource
 Input/
 Icon
+
+# Arbeitskopien (Kernzeile „Arbeitskopien“) und lokaler Stand der Prüfkette
+.worktrees/
+.claude/worktrees/
+.claude/pruefkette/
+.claude/pruefkette-stand
+.claude/pruefkette-zeiten.log
+.claude/settings.local.json
