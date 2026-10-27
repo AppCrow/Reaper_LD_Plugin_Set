@@ -1,11 +1,12 @@
 #!/bin/bash
-# Wofür: PreToolUse-Hook für alle Werkzeuge. Blockiert jeden Aufruf, dessen Eingabe einen Pfad im Benutzerordner außerhalb der erlaubten Ordner nennt (Positivliste TABU_ERLAUBT in konfig.sh) oder einen immer gesperrten Teilstring (TABU). Erkennt Punkt-Punkt-Ausbrüche, freistehende Tilde, $HOME und JSON-maskierte Anführungszeichen. Gilt auch für Sub-Agenten, weil der Hook an der Sitzung hängt: „Textregeln schlagen keine Rechte“, das hier ist das Recht.
-# Anpassen: nichts hier, nur die Listen in konfig.sh. Kopie aus dem Projektstarter; neuer Stand per Kopie (Projektstart.md).
+# Wofür: PreToolUse-Hook für alle Werkzeuge. Blockiert jeden Aufruf, dessen Eingabe einen Pfad im Benutzerordner außerhalb der erlaubten Ordner nennt (Positivliste TABU_ERLAUBT in konfig.sh) oder einen immer gesperrten Teilstring (TABU, ganze Eingabe). Geheimnis-Dateien (TABU_INHALT) sperrt er nur außerhalb der Textfelder: Pfad ja, Inhalt nie. Erkennt Punkt-Punkt-Ausbrüche, freistehende Tilde, $HOME und JSON-maskierte Anführungszeichen. Gilt auch für Sub-Agenten, weil der Hook an der Sitzung hängt: „Textregeln schlagen keine Rechte“, das hier ist das Recht.
+# Anpassen: nichts hier, nur die Listen in konfig.sh. Kopie aus dem Projektstarter; neuer Stand per Vorlagen/nachziehen.sh (Projektstart.md).
 HIER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ -f "$HIER/konfig.sh" ] && . "$HIER/konfig.sh"
 TABU_ERLAUBT_TXT="$(printf '%s\n' ${TABU_ERLAUBT[@]+"${TABU_ERLAUBT[@]}"})"
 TABU_TXT="$(printf '%s\n' ${TABU[@]+"${TABU[@]}"})"
-export TABU_ERLAUBT_TXT TABU_TXT PROJEKTSTARTER
+TABU_INHALT_TXT="$(printf '%s\n' ${TABU_INHALT[@]+"${TABU_INHALT[@]}"})"
+export TABU_ERLAUBT_TXT TABU_TXT TABU_INHALT_TXT PROJEKTSTARTER
 exec python3 -c '
 import json, os, re, sys
 HOME = os.path.expanduser("~").rstrip("/")
@@ -14,22 +15,42 @@ ps = os.environ.get("PROJEKTSTARTER", "").rstrip("/")
 if erlaubt and ps and os.path.isdir(ps):
     erlaubt.append(ps + "/")
 tabu = [t for t in os.environ.get("TABU_TXT", "").split("\n") if t.strip()]
+inhalt = [t for t in os.environ.get("TABU_INHALT_TXT", "").split("\n") if t.strip()]
+# Textfelder: was in die Datei geschrieben wird; dort darf ein Geheimnis-Pfad stehen
+TEXTFELDER = {"content", "old_string", "new_string", "new_source"}
+
+def ohne_text(w):
+    if isinstance(w, dict):
+        return {k: ohne_text(v) for k, v in w.items() if k not in TEXTFELDER}
+    if isinstance(w, list):
+        return [ohne_text(v) for v in w]
+    return w
+
+def heim(s):
+    # ~ und $HOME wie den ausgeschriebenen Benutzerordner behandeln
+    s = re.sub(r"(?<![\w/.~])~(?=[/\s;&|)\x22\x27]|$)", HOME, s)
+    return s.replace("${HOME}", HOME).replace("$HOME", HOME)
+
 roh = sys.stdin.read()
 try:
-    text = json.dumps(json.loads(roh).get("tool_input", {}), ensure_ascii=False)
+    eingabe = json.loads(roh).get("tool_input", {})
+    text = json.dumps(eingabe, ensure_ascii=False)
+    pfade = json.dumps(ohne_text(eingabe), ensure_ascii=False)
 except Exception:
-    text = roh
-# ~ und $HOME wie den ausgeschriebenen Benutzerordner behandeln
-text = re.sub(r"(?<![\w/.~])~(?=[/\s;&|)\x22\x27]|$)", HOME, text)
-text = text.replace("${HOME}", HOME).replace("$HOME", HOME)
+    text = pfade = roh
+text, pfade = heim(text), heim(pfade)
 
-def blockiert(grund):
-    print(grund + " (CLAUDE.md, Abschnitt Tabu). Nicht öffnen, nicht suchen, nicht nennen.", file=sys.stderr)
+def blockiert(grund, was="Nicht öffnen, nicht suchen, nicht nennen."):
+    print(grund + " (CLAUDE.md, Abschnitt Tabu). " + was, file=sys.stderr)
     sys.exit(2)
 
 for t in tabu:
     if t in text:
         blockiert(f"Blockiert: \"{t}\" ist tabu")
+for t in inhalt:
+    if re.search(re.escape(t) + r"(?!\.beispiel|\.example)", pfade):
+        blockiert(f"Blockiert: \"{t}\" ist eine Geheimnis-Datei (Pfad ja, Inhalt nie)",
+                  "Nicht öffnen, nicht durchsuchen, nicht in Befehle oder Agenten-Briefe; Skriptzeilen mit dem Pfad mit Write/Edit schreiben.")
 if erlaubt:
     for e in erlaubt:
         if e.rstrip("/") + "/.." in text:

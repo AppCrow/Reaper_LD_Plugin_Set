@@ -30,6 +30,12 @@
       "Bash(./scripts/check.sh *)",
       "Bash(scripts/check.sh)",
       "Bash(scripts/check.sh *)"
+    ],
+    "ask": [
+      "Bash(./scripts/website/veroeffentlichen.sh --ausfuehren*)",
+      "Bash(scripts/website/veroeffentlichen.sh --ausfuehren*)",
+      "Bash(phasen/website/scripts/website/veroeffentlichen.sh --ausfuehren*)",
+      "Bash(./phasen/website/scripts/website/veroeffentlichen.sh --ausfuehren*)"
     ]
   },
   "autoCompactWindow": 200000
