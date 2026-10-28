@@ -83,6 +83,14 @@ anwenden, die die Aufgabe betrifft.
   Block: `tests/fixtures/*.RPP` nie aus REAPER speichern (beim Schließen „No“).
 - Ein gemountetes Disk-Image folgt der Datei darunter nicht: vor jedem neuen Paket-Test
   `hdiutil detach`, sonst lädt REAPER den alten Installer.
+- Headless Chrome (neutraler Build rendert die Guides zu PDF) endet unter Last mit Exit 2, obwohl
+  das PDF fertig ist: Chrome schreibt „N bytes written to file“, hängt beim Beenden, sein eigener
+  „Teardown watchdog“ bricht ihn ab. Beleg 2026-10-28: 12 von 180 Aufrufen bei drei parallelen
+  Chromes, in allen zwölf war das PDF komplett; 2 von 8 vollen Builds rot, beide „Chrome failed to
+  render copy-markers.html“. `render_one` in `build-package.sh` wertet darum PDF plus diese Zeile,
+  nicht den Exit-Code (`tests/pdf_render_test.lua`); ohne beides drei Versuche, dann Abbruch mit
+  Chromes letzten Zeilen. Der Build-Schritt trägt `schwer=browser:2`, damit er sich mit den
+  headless-Chromes anderer Projekte die Plätze teilt.
 - Die gebündelten macOS-Erweiterungen sind arm64; Downloads aus dem Browser tragen das
   Quarantäne-Attribut, der Installer entfernt es; Erweiterungen laden erst nach Neustart.
 - Computer-use erreicht keine ReaImGui-Knöpfe: Screenshots und native REAPER-Fenster ja,

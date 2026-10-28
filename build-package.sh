@@ -67,7 +67,7 @@ NEUTRAL_INSTALLER="ld_install.lua"
 NEUTRAL_TITLE="LD Tools — REAPER LD Plugin Set"
 NEUTRAL_BRAND='SB.BRAND = { word = "LD Tools", sub = "", sub_bar = "", mark = false }'
 
-CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CHROME="${BUILD_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"   # BUILD_CHROME: tests/pdf_render_test.lua
 
 die() { echo "build-package.sh: $*" >&2; exit 1; }
 
@@ -75,6 +75,7 @@ usage() {
   echo "usage: $0 [mac|win|all] [--neutral]" >&2
   echo "       $0 stage-neutral <dir> [macOS|Windows]" >&2
   echo "       $0 debrand <dir>" >&2
+  echo "       $0 render-pdfs <dir>   (<dir>/Tutorials/*.html -> <dir>/Guides (PDF)/)" >&2
   exit 2
 }
 
@@ -413,23 +414,51 @@ gate() {
 # profile so the build never touches the user's own. No Chrome: no PDFs, and
 # one line saying so — shipping the branded ones instead is not an option.
 
+# One page, one PDF. Chrome prints "N bytes written to file" once the PDF is
+# complete, but under load its shutdown can overrun its own teardown watchdog
+# ("Teardown watchdog expired"), which kills it with exit 2 after the file is
+# done (2026-10-28: 12 of 180 calls with three Chromes in parallel, every PDF
+# complete). So the file and that line decide, not the exit code. A render
+# without them is tried again with a fresh profile, three times, and then the
+# build stops with Chrome's own last lines.
+
+render_one() {
+  local page="$1" out="$2" try profile log rc
+  log="$(mktemp)"
+  for try in 1 2 3; do
+    rm -f "$out"
+    profile="$(mktemp -d)"
+    rc=0
+    "$CHROME" --headless --disable-gpu --no-sandbox --no-pdf-header-footer \
+      --user-data-dir="$profile" --print-to-pdf="$out" "file://${page// /%20}" \
+      >"$log" 2>&1 || rc=$?
+    rm -rf "$profile"
+    if [ -s "$out" ] && grep -q "bytes written to file" "$log"; then
+      [ "$rc" = 0 ] || echo "note: Chrome exited $rc after writing $(basename "$out"), PDF kept" >&2
+      rm -f "$log"
+      return 0
+    fi
+    echo "warning: Chrome did not render $(basename "$page") (exit $rc, try $try of 3)" >&2
+  done
+  echo "--- last lines of Chrome's output:" >&2
+  tail -n 15 "$log" >&2
+  rm -f "$log"
+  die "Chrome failed to render $page"
+}
+
 render_pdfs() {
-  local inner="$1" profile page out n_html=0 n_pdf=0
+  local inner="$1" page out n_html=0 n_pdf=0
   if [ ! -x "$CHROME" ]; then
     echo "warning: Google Chrome not found, the neutral package ships without Guides (PDF)/" >&2
     return 0
   fi
-  profile="$(mktemp -d)"
   mkdir -p "$inner/Guides (PDF)"
   for page in "$inner/Tutorials/"*.html; do
     out="$inner/Guides (PDF)/$(basename "$page" .html).pdf"
-    "$CHROME" --headless --disable-gpu --no-sandbox --no-pdf-header-footer \
-      --user-data-dir="$profile" --print-to-pdf="$out" "file://${page// /%20}" \
-      >/dev/null 2>&1 || die "Chrome failed to render $page"
+    render_one "$page" "$out"
     n_html=$((n_html + 1))
     [ -s "$out" ] && n_pdf=$((n_pdf + 1))
   done
-  rm -rf "$profile"
   [ "$n_pdf" = "$n_html" ] || die "rendered $n_pdf of $n_html PDFs"
 }
 
@@ -523,6 +552,12 @@ case "${1:-}" in
     [ $# -eq 2 ] || usage
     debrand "$2"
     echo "debranded: $2"
+    exit 0
+    ;;
+  render-pdfs)
+    [ $# -eq 2 ] || usage
+    render_pdfs "$2"
+    echo "rendered: $2"
     exit 0
     ;;
 esac
