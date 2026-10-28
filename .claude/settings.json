@@ -1,0 +1,42 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/vor-push.sh",
+            "timeout": 1800,
+            "onFailure": "block"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Read|Edit|Write|Glob|Grep|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/tabu.sh",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(./scripts/check.sh)",
+      "Bash(./scripts/check.sh *)",
+      "Bash(scripts/check.sh)",
+      "Bash(scripts/check.sh *)"
+    ],
+    "ask": [
+      "Bash(./scripts/website/veroeffentlichen.sh --ausfuehren*)",
+      "Bash(scripts/website/veroeffentlichen.sh --ausfuehren*)",
+      "Bash(phasen/website/scripts/website/veroeffentlichen.sh --ausfuehren*)",
+      "Bash(./phasen/website/scripts/website/veroeffentlichen.sh --ausfuehren*)"
+    ]
+  },
+  "autoCompactWindow": 200000
+}
